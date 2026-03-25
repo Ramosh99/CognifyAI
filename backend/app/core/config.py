@@ -12,9 +12,13 @@ class Settings(BaseSettings):
         "http://localhost:3000", # Next.js default porta
         "http://127.0.0.1:3000",
     ]
-
+    
+    # LLM Settings
+    OPENROUTER_API_KEY: str = ""
+    
     model_config = {
-        "case_sensitive": True
+        "case_sensitive": True,
+        "env_file": ".env"
     }
 
 settings = Settings()

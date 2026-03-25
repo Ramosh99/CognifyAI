@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .core.config import settings
+from app.core.config import settings
+from app.api.endpoints import documents, learning
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -16,6 +17,11 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Register routers
+app.include_router(documents.router, prefix=settings.API_V1_STR)
+app.include_router(learning.router, prefix=settings.API_V1_STR)
+
 
 @app.get("/health")
 def health_check():
