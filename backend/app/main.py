@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.endpoints import documents, learning
 
+# Register pgvector type with SQLAlchemy
+from pgvector.sqlalchemy import Vector  # noqa: F401 — side-effect import registers the type
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"

@@ -1,86 +1,71 @@
 """
-RAG Service (Orchestrator)
---------------------------
-Ties together chunking, embedding, and vector storage.
-Provides two main operations:
-  1. ingest()  — chunk a document text, embed chunks, store in Qdrant
-  2. retrieve() — embed a query and fetch the top-k most relevant chunks
+RAG Service (Orchestrator) — Supabase SDK backend
+--------------------------------------------------
+Uses the supabase-py REST client (HTTPS) instead of a direct psycopg2 connection.
+This works on all Supabase tiers including the free (Nano) plan.
+
+Two main operations:
+  1. ingest()   — chunk a document, embed the chunks, store in Supabase via REST
+  2. retrieve() — embed a query, call the match_documents RPC function for cosine search
 """
 from typing import List, Optional
-from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    Distance,
-    VectorParams,
-    PointStruct,
-    Filter,
-    FieldCondition,
-    MatchValue,
-)
 import uuid
 
-from .embedding_service import embedding_service
-from .chunking_service import chunking_service
+from supabase import create_client, Client
+from app.core.config import settings
+from app.services.embedding_service import embedding_service
+from app.services.chunking_service import chunking_service
 
-COLLECTION_NAME = "cognifyai_docs"
-VECTOR_DIM = 768  # BAAI/bge-base-en-v1.5 outputs 768-dimensional vectors
+
+def _get_supabase() -> Client:
+    """Create a Supabase client using the URL and service-role key from settings."""
+    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+        raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in your .env file.")
+    return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 
 class RAGService:
-    def __init__(self):
-        # In-memory Qdrant (no server needed for development)
-        # Replace with QdrantClient(url="...", api_key="...") for production
-        self._client = QdrantClient(":memory:")
-        self._ensure_collection()
-
-    # ------------------------------------------------------------------ #
-    # Private helpers
-    # ------------------------------------------------------------------ #
-
-    def _ensure_collection(self):
-        """Create the Qdrant collection if it doesn't already exist."""
-        existing = [c.name for c in self._client.get_collections().collections]
-        if COLLECTION_NAME not in existing:
-            self._client.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(size=VECTOR_DIM, distance=Distance.COSINE),
-            )
-            print(f"Created Qdrant collection: {COLLECTION_NAME}")
-
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
 
-    def ingest(self, text: str, metadata: Optional[dict] = None) -> int:
+    def ingest(self, text_content: str, metadata: Optional[dict] = None) -> int:
         """
         Chunk → embed → store pipeline.
 
         Args:
-            text:     Raw document text to ingest.
-            metadata: Optional dict stored alongside each chunk for filtering.
+            text_content: Raw document text to ingest.
+            metadata:     Optional dict with 'topic' and/or 'source' keys.
 
         Returns:
             Number of chunks stored.
         """
-        chunks = chunking_service.split_text(text)
+        chunks = chunking_service.split_text(text_content)
         if not chunks:
             return 0
 
         vectors = embedding_service.embed_batch(chunks)
+        meta = metadata or {}
+        client = _get_supabase()
 
-        points = [
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vec,
-                payload={
-                    "text": chunk,
-                    **(metadata or {}),
-                },
-            )
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "text": chunk,
+                "topic": meta.get("topic"),
+                "source": meta.get("source"),
+                "embedding": vec,          # supabase-py sends this as a JSON array → pgvector accepts it
+            }
             for chunk, vec in zip(chunks, vectors)
         ]
 
-        self._client.upsert(collection_name=COLLECTION_NAME, points=points)
-        return len(points)
+        # Insert in one batch call
+        response = client.table("documents").insert(rows).execute()
+
+        if hasattr(response, "error") and response.error:
+            raise RuntimeError(f"Supabase insert error: {response.error}")
+
+        return len(rows)
 
     def retrieve(
         self,
@@ -89,38 +74,42 @@ class RAGService:
         filter_topic: Optional[str] = None,
     ) -> List[dict]:
         """
-        Embed a query and return the top-k most similar chunks.
+        Embed a query and return the top-k most similar document chunks.
 
         Args:
             query:        User question or search string.
             top_k:        Number of results to return.
-            filter_topic: Optional metadata filter (e.g., "networking").
+            filter_topic: Optional topic filter (e.g., "networking").
 
         Returns:
-            List of dicts with 'text', 'score', and any metadata.
+            List of dicts with 'text', 'score', 'topic', 'source'.
         """
         query_vec = embedding_service.embed_query(query)
+        client = _get_supabase()
 
-        search_filter = None
-        if filter_topic:
-            search_filter = Filter(
-                must=[FieldCondition(key="topic", match=MatchValue(value=filter_topic))]
-            )
+        # Call the match_documents Postgres function via Supabase RPC
+        response = client.rpc(
+            "match_documents",
+            {
+                "query_embedding": query_vec,
+                "match_count": top_k,
+                "filter_topic": filter_topic,
+            },
+        ).execute()
 
-        results = self._client.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=query_vec,
-            limit=top_k,
-            query_filter=search_filter,
-        )
+        if hasattr(response, "error") and response.error:
+            raise RuntimeError(f"Supabase RPC error: {response.error}")
+
+        rows = response.data or []
 
         return [
             {
-                "text": hit.payload.get("text", ""),
-                "score": round(hit.score, 4),
-                **{k: v for k, v in hit.payload.items() if k != "text"},
+                "text": row.get("text", ""),
+                "score": round(float(row.get("score", 0.0)), 4),
+                "topic": row.get("topic"),
+                "source": row.get("source"),
             }
-            for hit in results
+            for row in rows
         ]
 
 
