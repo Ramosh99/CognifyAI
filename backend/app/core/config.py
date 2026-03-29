@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ]
 
     # LLM
-    OPENROUTER_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     # Supabase / PostgreSQL
     SUPABASE_URL: str = ""

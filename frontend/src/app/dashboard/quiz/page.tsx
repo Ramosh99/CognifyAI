@@ -6,10 +6,10 @@ type LearnerType = "Visual" | "Textual" | "Practical";
 type AnswerMap   = Record<number, string>;
 type FeedbackMap = Record<number, string>;
 
-const LEARNER_TYPES: { type: LearnerType; icon: string; desc: string }[] = [
-  { type: "Visual",    icon: "👁️",  desc: "Diagrams, analogies & visual structure" },
-  { type: "Textual",   icon: "📄",  desc: "Clear written explanations & definitions" },
-  { type: "Practical", icon: "🛠️",  desc: "Examples, use-cases & hands-on context" },
+const LEARNER_TYPES: { type: LearnerType; desc: string }[] = [
+  { type: "Visual",    desc: "Diagrams, analogies & visual structure" },
+  { type: "Textual",   desc: "Clear written explanations & definitions" },
+  { type: "Practical", desc: "Examples, use-cases & hands-on context" },
 ];
 
 export default function QuizPage() {
@@ -39,11 +39,10 @@ export default function QuizPage() {
   };
 
   const pickAnswer = async (qi: number, key: string) => {
-    if (answers[qi]) return;                    // already answered
+    if (answers[qi]) return;
     setAnswers((prev) => ({ ...prev, [qi]: key }));
     const q = questions[qi];
     if (key !== q.correct_key) {
-      // Wrong — trigger misconception analysis
       setAnalyzing(qi);
       try {
         const wrongOption  = q.options.find((o) => o.key === key);
@@ -67,27 +66,26 @@ export default function QuizPage() {
 
   return (
     <div style={{ maxWidth: "780px" }}>
-      <h1>Take a Quiz</h1>
-      <p style={{ marginTop: "0.4rem", marginBottom: "2rem" }}>
-        Generate concept-aware MCQs from your knowledge base. Pick a wrong answer to see <em>why</em> you were wrong.
+      <h1>Quiz</h1>
+      <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
+        Generate concept-aware MCQs. Pick a wrong answer to see why you were wrong.
       </p>
 
       {/* Config Card */}
       {!questions.length && (
-        <div className="card fade-up" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <div className="card fade-up" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           {/* Learner Type */}
           <div>
-            <h3 style={{ marginBottom: "0.75rem" }}>1. Choose your learner type</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem" }}>
+            <h3 style={{ marginBottom: "0.6rem", fontSize: "0.9rem" }}>Learner type</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.6rem" }}>
               {LEARNER_TYPES.map((l) => (
                 <div
                   key={l.type}
                   className={`learner-card ${learnerType === l.type ? "selected" : ""}`}
                   onClick={() => setLearnerType(l.type)}
                 >
-                  <div className="learner-icon">{l.icon}</div>
-                  <h3>{l.type}</h3>
-                  <p style={{ fontSize: "0.78rem", marginTop: "0.3rem" }}>{l.desc}</p>
+                  <h3 style={{ fontSize: "0.9rem" }}>{l.type}</h3>
+                  <p style={{ fontSize: "0.72rem", marginTop: "0.2rem" }}>{l.desc}</p>
                 </div>
               ))}
             </div>
@@ -96,16 +94,16 @@ export default function QuizPage() {
           {/* Topic + Count */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", alignItems: "flex-end" }}>
             <div>
-              <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}>
-                2. Enter a topic to quiz on
+              <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Topic
               </label>
-              <input className="input" placeholder="e.g. networking, TCP/IP, machine learning" value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && startQuiz()} />
+              <input className="input" placeholder="e.g. networking, TCP/IP" value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && startQuiz()} />
             </div>
             <div>
-              <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}>
+              <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Questions
               </label>
-              <select className="input" style={{ width: "90px" }} value={qCount} onChange={(e) => setQCount(Number(e.target.value))}>
+              <select className="input" style={{ width: "80px" }} value={qCount} onChange={(e) => setQCount(Number(e.target.value))}>
                 {[2, 3, 5, 7, 10].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
@@ -114,7 +112,7 @@ export default function QuizPage() {
           {error && <div className="feedback-box error">{error}</div>}
 
           <button className="btn btn-primary" onClick={startQuiz} disabled={loading} style={{ alignSelf: "flex-start" }}>
-            {loading ? <><span className="spinner" /> Generating quiz...</> : "🧠 Generate Quiz"}
+            {loading ? <><span className="spinner" /> Generating...</> : "Generate Quiz"}
           </button>
         </div>
       )}
@@ -123,21 +121,21 @@ export default function QuizPage() {
       {questions.length > 0 && (
         <div className="fade-up">
           {/* Score bar */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-            <div>
-              <span className="badge badge-blue">{learnerType} Learner</span>{" "}
-              <span className="badge badge-blue" style={{ marginLeft: "0.3rem" }}>{topic}</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+            <div style={{ display: "flex", gap: "0.3rem" }}>
+              <span className="badge badge-blue">{learnerType}</span>
+              <span className="badge badge-blue">{topic}</span>
             </div>
-            <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
               {Object.keys(answers).length}/{questions.length} answered · {score} correct
             </span>
           </div>
 
           {Object.keys(answers).length === questions.length && (
-            <div className={`feedback-box ${score === questions.length ? "success" : "info"} fade-up`} style={{ marginBottom: "1.5rem" }}>
+            <div className={`feedback-box ${score === questions.length ? "success" : "info"} fade-up`} style={{ marginBottom: "1.25rem" }}>
               {score === questions.length
-                ? `🎉 Perfect score! ${score}/${questions.length}. Excellent understanding!`
-                : `📊 Score: ${score}/${questions.length}. Review the misconception explanations below.`}
+                ? `Perfect score! ${score}/${questions.length}.`
+                : `Score: ${score}/${questions.length}. Review the explanations below.`}
             </div>
           )}
 
@@ -145,21 +143,20 @@ export default function QuizPage() {
             const picked  = answers[qi];
             const isMissed = picked && picked !== q.correct_key;
             return (
-              <div key={qi} className="card fade-up" style={{ marginBottom: "1.25rem", animationDelay: `${qi * 0.05}s` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
-                  <h3 style={{ color: "var(--text-primary)", flex: 1 }}>
-                    Q{qi + 1}. {q.question}
+              <div key={qi} className="card fade-up" style={{ marginBottom: "1rem", animationDelay: `${qi * 0.05}s` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.85rem" }}>
+                  <h3 style={{ color: "var(--text-primary)", flex: 1, fontSize: "0.9rem" }}>
+                    {qi + 1}. {q.question}
                   </h3>
                   {picked && (
                     <span className={`badge ${picked === q.correct_key ? "badge-green" : "badge-red"}`} style={{ marginLeft: "1rem", flexShrink: 0 }}>
-                      {picked === q.correct_key ? "✔ Correct" : "✘ Wrong"}
+                      {picked === q.correct_key ? "Correct" : "Wrong"}
                     </span>
                   )}
                 </div>
 
                 <div>
                   {q.options.map((opt, optIdx) => {
-                    // Derive letter label from key or fallback to A/B/C/D by index
                     const letter = opt.key ?? String.fromCharCode(65 + optIdx);
                     let cls = "mcq-option";
                     if (picked) {
@@ -169,24 +166,23 @@ export default function QuizPage() {
                     }
                     return (
                       <button key={`${qi}-${optIdx}`} className={cls} onClick={() => pickAnswer(qi, letter)}>
-                        <span style={{ fontWeight: 700, marginRight: "0.5rem", opacity: 0.6 }}>{letter}.</span>
+                        <span style={{ fontWeight: 600, marginRight: "0.5rem", opacity: 0.5 }}>{letter}.</span>
                         {opt.text}
                       </button>
                     );
                   })}
                 </div>
 
-                {/* Misconception Feedback */}
                 {isMissed && (
-                  <div style={{ marginTop: "1rem" }}>
+                  <div style={{ marginTop: "0.85rem" }}>
                     {analyzing === qi ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                        <span className="spinner" /> Analyzing your misconception...
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.82rem" }}>
+                        <span className="spinner" /> Analyzing...
                       </div>
                     ) : feedbacks[qi] ? (
                       <div className="feedback-box error fade-up">
-                        <strong style={{ display: "block", marginBottom: "0.5rem", color: "var(--accent-danger)" }}>
-                          🔍 Misconception Analysis
+                        <strong style={{ display: "block", marginBottom: "0.4rem", color: "var(--accent-danger)", fontSize: "0.8rem" }}>
+                          Misconception Analysis
                         </strong>
                         {feedbacks[qi]}
                       </div>
@@ -194,10 +190,9 @@ export default function QuizPage() {
                   </div>
                 )}
 
-                {/* Correct answer explanation */}
                 {picked === q.correct_key && q.explanation && (
-                  <div className="feedback-box success fade-up" style={{ marginTop: "0.75rem" }}>
-                    <strong style={{ display: "block", marginBottom: "0.25rem" }}>💡 Why this is correct</strong>
+                  <div className="feedback-box success fade-up" style={{ marginTop: "0.6rem" }}>
+                    <strong style={{ display: "block", marginBottom: "0.2rem", fontSize: "0.8rem" }}>Why this is correct</strong>
                     {q.explanation}
                   </div>
                 )}

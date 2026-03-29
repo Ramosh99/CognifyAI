@@ -7,9 +7,9 @@ export type DiagramData = {
   nodes: DiagramNode[];
 };
 
-const BG = "#0d1117";
+const BG = "var(--diagram-bg)";
 const VALID_HEX = /^#[0-9a-fA-F]{6}$/;
-const FALLBACK_COLORS = ["#06b6d4", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#f97316"];
+const FALLBACK_COLORS = ["#ffffff", "#a3a3a3", "#737373", "#525252", "#404040", "#262626"];
 
 function safeColor(c: string, idx: number) {
   return VALID_HEX.test(c) ? c : FALLBACK_COLORS[idx % FALLBACK_COLORS.length];

@@ -35,36 +35,36 @@ export default function UploadPage() {
         if (!file) throw new Error("Please select a file.");
         res = await ingestFile(file, topic || undefined);
       }
-      setStatus({ type: "success", msg: `✅ ${res.message} (${res.chunks_stored} chunks stored)` });
+      setStatus({ type: "success", msg: `${res.message} (${res.chunks_stored} chunks stored)` });
       setText(""); setFile(null); setTopic(""); setSource("");
     } catch (e: unknown) {
-      setStatus({ type: "error", msg: `❌ ${e instanceof Error ? e.message : "Something went wrong"}` });
+      setStatus({ type: "error", msg: `${e instanceof Error ? e.message : "Something went wrong"}` });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: "700px" }}>
-      <h1>Upload Study Material</h1>
-      <p style={{ marginTop: "0.4rem", marginBottom: "2rem" }}>
+    <div style={{ maxWidth: "780px" }}>
+      <h1>Upload</h1>
+      <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
         Ingest a PDF, TXT file, or paste raw text into the knowledge base.
       </p>
 
       {/* Mode Toggle */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
         {(["file", "text"] as Mode[]).map((m) => (
           <button
             key={m}
             className={`btn ${mode === m ? "btn-primary" : "btn-outline"}`}
             onClick={() => setMode(m)}
           >
-            {m === "file" ? "📄 File Upload" : "✏️ Paste Text"}
+            {m === "file" ? "File Upload" : "Paste Text"}
           </button>
         ))}
       </div>
 
-      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
         {mode === "file" ? (
           <div
             className={`drop-zone ${dragging ? "dragging" : ""}`}
@@ -82,22 +82,20 @@ export default function UploadPage() {
             />
             {file ? (
               <div>
-                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📄</div>
-                <p style={{ color: "var(--text-primary)", fontWeight: 600 }}>{file.name}</p>
-                <p style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{(file.size / 1024).toFixed(1)} KB</p>
+                <p style={{ color: "var(--text-primary)", fontWeight: 500, fontSize: "0.9rem" }}>{file.name}</p>
+                <p style={{ fontSize: "0.78rem", marginTop: "0.2rem", color: "var(--text-muted)" }}>{(file.size / 1024).toFixed(1)} KB</p>
               </div>
             ) : (
               <div>
-                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>☁️</div>
-                <p style={{ color: "var(--text-primary)", fontWeight: 600 }}>Drop a file here or click to browse</p>
-                <p style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>Supports .txt and .pdf</p>
+                <p style={{ color: "var(--text-secondary)", fontWeight: 500, fontSize: "0.9rem" }}>Drop a file here or click to browse</p>
+                <p style={{ fontSize: "0.78rem", marginTop: "0.2rem", color: "var(--text-muted)" }}>Supports .txt and .pdf</p>
               </div>
             )}
           </div>
         ) : (
           <div>
-            <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}>
-              Paste your text content
+            <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Content
             </label>
             <textarea
               className="textarea"
@@ -112,17 +110,17 @@ export default function UploadPage() {
         {/* Metadata */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
-            <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}>
-              Topic <span style={{ color: "var(--text-muted)" }}>(optional)</span>
+            <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Topic
             </label>
-            <input className="input" placeholder="e.g. networking, machine learning" value={topic} onChange={(e) => setTopic(e.target.value)} />
+            <input className="input" placeholder="e.g. networking" value={topic} onChange={(e) => setTopic(e.target.value)} />
           </div>
           {mode === "text" && (
             <div>
-              <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}>
-                Source <span style={{ color: "var(--text-muted)" }}>(optional)</span>
+              <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Source
               </label>
-              <input className="input" placeholder="e.g. Textbook Chapter 3" value={source} onChange={(e) => setSource(e.target.value)} />
+              <input className="input" placeholder="e.g. Textbook Ch. 3" value={source} onChange={(e) => setSource(e.target.value)} />
             </div>
           )}
         </div>
@@ -134,7 +132,7 @@ export default function UploadPage() {
         )}
 
         <button className="btn btn-primary" onClick={submit} disabled={loading} style={{ alignSelf: "flex-start" }}>
-          {loading ? <><span className="spinner" /> Ingesting...</> : "📥 Ingest into Knowledge Base"}
+          {loading ? <><span className="spinner" /> Ingesting...</> : "Ingest"}
         </button>
       </div>
     </div>

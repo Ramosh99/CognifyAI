@@ -35,9 +35,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        setSuccess(
-          "🎉 Account created! Check your email for a confirmation link, then sign in."
-        );
+        setSuccess("Account created. Check your email for a confirmation link, then sign in.");
       }
     }
 
@@ -45,27 +43,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ width: "100%", maxWidth: "420px" }}>
+    <div style={{ width: "100%", maxWidth: "380px" }}>
       {/* Logo */}
       <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-        <h1 className="grad-text" style={{ fontSize: "2rem" }}>CognifyAI</h1>
-        <p style={{ marginTop: "0.3rem", fontSize: "0.9rem" }}>
-          {tab === "signin" ? "Sign in to your account" : "Create a new account"}
+        <h1 className="grad-text" style={{ fontSize: "1.75rem" }}>CognifyAI</h1>
+        <p style={{ marginTop: "0.35rem", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+          {tab === "signin" ? "Sign in to continue" : "Create your account"}
         </p>
       </div>
 
       {/* Card */}
-      <div className="card" style={{ padding: "2rem" }}>
+      <div className="card" style={{ padding: "1.75rem" }}>
         {/* Tab Toggle */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            gap: "0.5rem",
-            marginBottom: "1.75rem",
+            gap: "0",
+            marginBottom: "1.5rem",
             background: "var(--bg-base)",
             borderRadius: "var(--radius-sm)",
-            padding: "0.25rem",
+            padding: "3px",
+            border: "1px solid var(--border)",
           }}
         >
           {(["signin", "signup"] as Tab[]).map((t) => (
@@ -73,16 +72,15 @@ export default function LoginPage() {
               key={t}
               onClick={() => { setTab(t); setError(""); setSuccess(""); }}
               style={{
-                padding: "0.55rem",
+                padding: "0.5rem",
                 borderRadius: "6px",
                 border: "none",
                 cursor: "pointer",
-                fontWeight: 600,
-                fontSize: "0.875rem",
-                transition: "all 0.15s",
+                fontWeight: 500,
+                fontSize: "0.825rem",
+                transition: "all 0.15s ease",
                 background: tab === t ? "var(--bg-card)" : "transparent",
                 color: tab === t ? "var(--text-primary)" : "var(--text-muted)",
-                boxShadow: tab === t ? "0 1px 4px rgba(0,0,0,0.3)" : "none",
               }}
             >
               {t === "signin" ? "Sign In" : "Sign Up"}
@@ -90,13 +88,13 @@ export default function LoginPage() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
           <div>
             <label
               htmlFor="email"
-              style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}
+              style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}
             >
-              Email address
+              Email
             </label>
             <input
               id="email"
@@ -113,7 +111,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: "0.4rem" }}
+              style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}
             >
               Password
             </label>
@@ -121,7 +119,7 @@ export default function LoginPage() {
               id="password"
               type="password"
               className="input"
-              placeholder={tab === "signup" ? "Minimum 6 characters" : "Enter your password"}
+              placeholder={tab === "signup" ? "Min 6 characters" : "Your password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -136,22 +134,22 @@ export default function LoginPage() {
             type="submit"
             className="btn btn-primary"
             disabled={loading}
-            style={{ width: "100%", padding: "0.75rem", marginTop: "0.25rem" }}
+            style={{ width: "100%", padding: "0.65rem", marginTop: "0.25rem" }}
           >
             {loading
               ? <><span className="spinner" /> {tab === "signin" ? "Signing in..." : "Creating account..."}</>
-              : tab === "signin" ? "Sign In →" : "Create Account →"}
+              : tab === "signin" ? "Sign In" : "Create Account"}
           </button>
         </form>
       </div>
 
       <p style={{ textAlign: "center", marginTop: "1.25rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-        {tab === "signin" ? "Don't have an account? " : "Already have an account? "}
+        {tab === "signin" ? "No account? " : "Have an account? "}
         <button
           onClick={() => { setTab(tab === "signin" ? "signup" : "signin"); setError(""); setSuccess(""); }}
-          style={{ background: "none", border: "none", color: "var(--accent-1)", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem" }}
+          style={{ background: "none", border: "none", color: "var(--accent-1)", cursor: "pointer", fontWeight: 500, fontSize: "0.8rem" }}
         >
-          {tab === "signin" ? "Sign up free" : "Sign in"}
+          {tab === "signin" ? "Sign up" : "Sign in"}
         </button>
       </p>
     </div>
