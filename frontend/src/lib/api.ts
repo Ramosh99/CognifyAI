@@ -83,17 +83,29 @@ export type VisualReference = {
 
 export type DiagramNode = { label: string; color: string };
 export type DiagramData = {
-  diagram_type: "hub_spoke" | "flow" | "cycle" | string;
+  diagram_type: "hub_spoke" | "flow" | "cycle" | "comparison" | string;
   center: string;
   nodes: DiagramNode[];
 };
 
+export type TextSection = {
+  type: "text";
+  heading?: string;
+  body: string;
+};
+
+export type ImageSection = {
+  type: "image";
+  caption: string;
+  diagram: DiagramData;
+};
+
+export type Section = TextSection | ImageSection;
+
 export type VisualResponse = {
   title: string;
-  explanation: string;
-  highlights: string[];
+  sections: Section[];
   references: VisualReference[];
-  diagram: DiagramData;
 };
 
 export const visualExplain = (body: {
@@ -101,3 +113,5 @@ export const visualExplain = (body: {
   learner_type?: string;
   topic?: string;
 }) => api<VisualResponse>("/visual/explain", { method: "POST", body: JSON.stringify(body) });
+
+

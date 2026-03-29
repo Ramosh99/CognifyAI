@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     model_config = {
         "case_sensitive": True,
         "env_file": ".env",
+        "extra": "ignore",   # silently ignore unknown env vars (e.g. HF_TOKEN leftovers)
     }
 
 

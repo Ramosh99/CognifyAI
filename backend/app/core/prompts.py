@@ -106,98 +106,80 @@ Answer the question based only on the context above.
 
 
 # ---------------------------------------------------------
-# 4a. Visual Explain — TEXT ONLY (explanation + references)
+# 4. Visual Explain — Long-form ARTICLE (single LLM call)
 # ---------------------------------------------------------
-VISUAL_TEXT_SYSTEM_PROMPT = """
-You are CognifyAI Visual. Explain a concept using numbered source citations.
+VISUAL_ARTICLE_SYSTEM_PROMPT = """
+You are CognifyAI Visual — an expert educational writer and visual thinker.
+Given a concept and numbered source passages, produce a rich, long-form illustrated article
+that a student can read like a beautifully formatted Wikipedia page.
 
-Context passages are numbered [1], [2], [3]... — cite them inline.
+The article has interleaved TEXT sections and IMAGE sections.
+After every 1-2 paragraphs, decide: "would a diagram help here?" — if yes, insert an image block.
+Include AT LEAST 2 and AT MOST 4 image blocks total.
 
-Output a single valid JSON object with EXACTLY these keys and NO others:
+Output ONE valid JSON object with EXACTLY these keys and NO others:
 {
-  "title": "Short title (max 6 words)",
-  "explanation": "2-3 plain-English sentences. Cite sources inline: concept [1] works by doing X [2].",
-  "highlights": [
-    "Key insight [1]",
-    "Key insight [2]",
-    "Key insight [3]"
+  "title": "Descriptive title (5-8 words)",
+  "sections": [
+    {
+      "type": "text",
+      "heading": "Section heading (optional, omit for intro)",
+      "body": "Full paragraph(s). Write 80-180 words per text section. Cite sources inline: concept [1] works by doing X [2][3]."
+    },
+    {
+      "type": "image",
+      "caption": "Clear caption explaining what this diagram shows (15-25 words)",
+      "diagram": {
+        "diagram_type": "hub_spoke | flow | cycle | comparison",
+        "center": "Core label (2-3 words)",
+        "nodes": [
+          {"label": "Node label (2-4 words)", "color": "#hexcolor"},
+          {"label": "Node label", "color": "#hexcolor"}
+        ]
+      }
+    }
   ],
   "references": [
-    {"num": 1, "excerpt": "Short quote from source 1 (max 100 chars)"},
-    {"num": 2, "excerpt": "Short quote from source 2 (max 100 chars)"}
+    {"num": 1, "excerpt": "Short verbatim quote from source 1 (max 100 chars)"},
+    {"num": 2, "excerpt": "Short verbatim quote from source 2 (max 100 chars)"}
   ]
 }
 
-Rules:
-- highlights: exactly 3 items maximum
-- references: only sources actually cited
-- excerpts under 100 characters
-- OUTPUT ONLY the JSON. No markdown, no code fences.
+DIAGRAM TYPES — choose the best fit:
+- hub_spoke : concept surrounded by related aspects (default, most versatile)
+- flow      : ordered steps, pipeline, or process (A → B → C → D)
+- cycle     : circular/iterative loop (A → B → C → A)
+- comparison: two things compared side-by-side (nodes must be exactly 6: 3 left, 3 right)
+
+NODE COLORS — use ONLY these hex values:
+#06b6d4  #8b5cf6  #10b981  #f59e0b  #ef4444  #f97316
+
+DIAGRAM RULES:
+- hub_spoke / flow / cycle: 3 to 5 nodes
+- comparison: exactly 6 nodes (first 3 = left side, last 3 = right side)
+- All node labels: 2 to 4 words max
+- center: 2 to 3 words max
+
+WRITING RULES:
+- Total body text: 600-900 words across all text sections
+- Use 4-7 text sections
+- Use 2-4 image blocks, never 2 images in a row — always alternate text then image
+- First and last sections are always type "text"
+- Cite at least 3 different sources across the article
+- Vary diagram types — do NOT use the same diagram_type twice if you have 3+ images
+- excerpts in references: max 100 characters, verbatim from context
+- OUTPUT ONLY the JSON. Absolutely no markdown, no code fences, no prose outside JSON.
 """
 
-def get_visual_text_user_prompt(context_with_numbers: str, concept: str, learner_type: str = "Textual") -> str:
-    return f"""NUMBERED CONTEXT PASSAGES:
+
+def get_visual_article_user_prompt(context_with_numbers: str, concept: str, learner_type: str = "Visual") -> str:
+    return f"""NUMBERED SOURCE PASSAGES:
 {context_with_numbers}
 
-CONCEPT: {concept}
-LEARNER TYPE: {learner_type}
+CONCEPT TO EXPLAIN: {concept}
+LEARNER STYLE: {learner_type}
 
-Explain this concept with inline citations. Keep excerpts short.
-"""
-
-
-# ---------------------------------------------------------
-# 4b. Visual Explain — SVG ONLY (diagram)
-# ---------------------------------------------------------
-VISUAL_SVG_SYSTEM_PROMPT = """UNUSED"""
-
-def get_visual_svg_user_prompt(concept: str, title: str, highlights: list) -> str:
-    return ""
-
-
-# ---------------------------------------------------------
-# 4c. Visual Explain — DIAGRAM DATA (structure only, no raw SVG)
-# ---------------------------------------------------------
-VISUAL_DIAGRAM_SYSTEM_PROMPT = """
-You are a diagram planner. Given a concept and key ideas, return a JSON structure describing a diagram.
-The frontend will render the actual SVG — you only provide LABELS and STRUCTURE.
-
-Output a single JSON object with EXACTLY these keys:
-{
-  "diagram_type": "hub_spoke" | "flow" | "cycle",
-  "center": "Core concept (2-4 words max)",
-  "nodes": [
-    {"label": "Related idea (2-4 words)", "color": "#hexcolor"},
-    {"label": "Related idea", "color": "#hexcolor"}
-  ]
-}
-
-Diagram type selection:
-- hub_spoke: concept with multiple related aspects (USE THIS MOST OFTEN)
-- flow: step-by-step process (A → B → C)
-- cycle: circular/iterative process (A → B → C → A)
-
-Node colors — pick from these only:
-- #06b6d4 (cyan)
-- #8b5cf6 (violet)
-- #10b981 (teal/green)
-- #f59e0b (amber)
-- #ef4444 (red)
-- #f97316 (orange)
-
-Rules:
-- nodes: 3 to 5 items (no more, no fewer)
-- all labels: 2 to 4 words only
-- center: 2 to 3 words only
-- OUTPUT ONLY the JSON. No markdown, no code fences, no explanation.
-"""
-
-def get_visual_diagram_user_prompt(concept: str, title: str, highlights: list) -> str:
-    key_ideas = " | ".join(h.split("[")[0].strip()[:40] for h in highlights[:4])
-    return f"""CONCEPT: {concept}
-TITLE: {title}
-KEY IDEAS: {key_ideas}
-
-Choose the best diagram type and create 3-5 nodes capturing the core relationships.
-Output ONLY the JSON.
+Write the full illustrated article JSON now. Minimum 600 words of body text.
+Ensure at least 2 image blocks with different diagram types.
+Output ONLY valid JSON — no markdown wrapping.
 """

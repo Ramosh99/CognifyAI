@@ -2,7 +2,7 @@
 
 export type DiagramNode = { label: string; color: string };
 export type DiagramData = {
-  diagram_type: "hub_spoke" | "flow" | "cycle" | string;
+  diagram_type: "hub_spoke" | "flow" | "cycle" | "comparison" | string;
   center: string;
   nodes: DiagramNode[];
 };
@@ -26,10 +26,9 @@ function wrap(text: string, maxChars = 11): string[] {
     else cur = next;
   }
   if (cur) lines.push(cur);
-  return lines.slice(0, 3); // max 3 lines
+  return lines.slice(0, 3);
 }
 
-/** Multiline text element, vertically centered */
 function Label({
   x, y, text, size = 12, weight = "600", fill = "#ffffff", lineH = 16, max = 11,
 }: {
@@ -57,13 +56,12 @@ function Label({
   );
 }
 
-// ─── Hub-Spoke (orbital / napkin.ai style) ────────────────────────────────────
+// ─── Hub-Spoke ────────────────────────────────────────────────────────────────
 function HubSpoke({ data }: { data: DiagramData }) {
   const cx = 350, cy = 205;
   const R  = 148;
   const nodes = data.nodes.slice(0, 6);
   const n = nodes.length;
-
   const angleFor = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
 
   return (
@@ -79,52 +77,33 @@ function HubSpoke({ data }: { data: DiagramData }) {
         </radialGradient>
       </defs>
 
-      {/* Background */}
       <rect width="700" height="410" fill={BG} />
-      {/* Subtle center glow on background */}
       <ellipse cx={cx} cy={cy} rx="280" ry="200" fill="url(#bg-glow)" />
 
-      {/* Orbital dashed rings — 3 ellipses at different angles */}
       {[{ rx: 195, ry: 88, rot: -38 }, { rx: 195, ry: 88, rot: 38 }, { rx: 80, ry: 195, rot: 0 }].map((o, i) => (
-        <ellipse
-          key={i}
-          cx={cx} cy={cy} rx={o.rx} ry={o.ry}
-          fill="none"
-          stroke="rgba(255,255,255,0.09)"
-          strokeDasharray="9 6"
-          strokeWidth="1.5"
-          transform={`rotate(${o.rot} ${cx} ${cy})`}
-        />
+        <ellipse key={i} cx={cx} cy={cy} rx={o.rx} ry={o.ry}
+          fill="none" stroke="rgba(255,255,255,0.09)" strokeDasharray="9 6" strokeWidth="1.5"
+          transform={`rotate(${o.rot} ${cx} ${cy})`} />
       ))}
 
-      {/* Subtle spokes from center to nodes */}
       {nodes.map((_, i) => {
         const a = angleFor(i);
         const nx = cx + R * Math.cos(a), ny = cy + R * Math.sin(a);
-        return (
-          <line key={i}
-            x1={cx} y1={cy} x2={nx} y2={ny}
-            stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="4 5"
-          />
-        );
+        return <line key={i} x1={cx} y1={cy} x2={nx} y2={ny} stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="4 5" />;
       })}
 
-      {/* Center node */}
       <circle cx={cx} cy={cy} r="68" fill="url(#cg)" />
       <circle cx={cx} cy={cy} r="55" fill="none" stroke="rgba(99,102,241,0.6)" strokeWidth="1.8" />
       <circle cx={cx} cy={cy} r="50" fill="rgba(99,102,241,0.12)" />
       <Label x={cx} y={cy} text={data.center} size={13} weight="700" fill="#e2e8f0" max={10} lineH={17} />
 
-      {/* Satellite nodes */}
       {nodes.map((node, i) => {
         const a = angleFor(i);
         const nx = cx + R * Math.cos(a), ny = cy + R * Math.sin(a);
         const color = safeColor(node.color, i);
         return (
           <g key={i}>
-            {/* Glow ring */}
             <circle cx={nx} cy={ny} r="43" fill={color} fillOpacity="0.07" />
-            {/* Main circle */}
             <circle cx={nx} cy={ny} r="34" fill={color} fillOpacity="0.18" stroke={color} strokeWidth="1.8" strokeOpacity="0.8" />
             <Label x={nx} y={ny} text={node.label} size={11} fill="#f1f5f9" max={10} lineH={14} />
           </g>
@@ -134,7 +113,7 @@ function HubSpoke({ data }: { data: DiagramData }) {
   );
 }
 
-// ─── Flow (left → right steps) ────────────────────────────────────────────────
+// ─── Flow ─────────────────────────────────────────────────────────────────────
 function Flow({ data }: { data: DiagramData }) {
   const allNodes = [{ label: data.center, color: "#6366f1" }, ...data.nodes.slice(0, 4)];
   const n   = allNodes.length;
@@ -158,15 +137,11 @@ function Flow({ data }: { data: DiagramData }) {
         return (
           <g key={i}>
             {i < n - 1 && (
-              <line
-                x1={x + 56} y1={cy} x2={x0 + (i + 1) * sep - 56} y2={cy}
-                stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" markerEnd="url(#arr)"
-              />
+              <line x1={x + 56} y1={cy} x2={x0 + (i + 1) * sep - 56} y2={cy}
+                stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" markerEnd="url(#arr)" />
             )}
-            {/* Step number badge */}
             <circle cx={x} cy={cy - 52} r="14" fill={color} fillOpacity="0.8" />
             <text x={x} y={cy - 52} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="11" fontWeight="700" fontFamily="system-ui,sans-serif">{i + 1}</text>
-            {/* Box */}
             <rect x={x - 52} y={cy - 34} width="104" height="68" rx="12" fill={color} fillOpacity="0.15" stroke={color} strokeWidth="1.5" strokeOpacity="0.7" />
             <Label x={x} y={cy} text={node.label} size={11} fill="#f1f5f9" max={9} lineH={14} />
           </g>
@@ -176,13 +151,12 @@ function Flow({ data }: { data: DiagramData }) {
   );
 }
 
-// ─── Cycle (circular arrows) ───────────────────────────────────────────────────
+// ─── Cycle ────────────────────────────────────────────────────────────────────
 function Cycle({ data }: { data: DiagramData }) {
   const cx = 350, cy = 205;
   const R  = 140;
   const nodes = [{ label: data.center, color: "#6366f1" }, ...data.nodes.slice(0, 4)];
   const n = nodes.length;
-
   const angleFor = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
 
   return (
@@ -194,7 +168,6 @@ function Cycle({ data }: { data: DiagramData }) {
       </defs>
       <rect width="700" height="410" fill={BG} />
 
-      {/* Curved arrows between nodes */}
       {nodes.map((_, i) => {
         const a1 = angleFor(i), a2 = angleFor(i + 1);
         const mid = (a1 + a2) / 2;
@@ -202,15 +175,11 @@ function Cycle({ data }: { data: DiagramData }) {
         const x2 = cx + R * Math.cos(a2), y2 = cy + R * Math.sin(a2);
         const qx = cx + (R + 55) * Math.cos(mid), qy = cy + (R + 55) * Math.sin(mid);
         return (
-          <path
-            key={i}
-            d={`M${x1},${y1} Q${qx},${qy} ${x2},${y2}`}
-            fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" markerEnd="url(#carr)"
-          />
+          <path key={i} d={`M${x1},${y1} Q${qx},${qy} ${x2},${y2}`}
+            fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" markerEnd="url(#carr)" />
         );
       })}
 
-      {/* Nodes */}
       {nodes.map((node, i) => {
         const a = angleFor(i);
         const nx = cx + R * Math.cos(a), ny = cy + R * Math.sin(a);
@@ -227,12 +196,105 @@ function Cycle({ data }: { data: DiagramData }) {
   );
 }
 
+// ─── Comparison (new — side-by-side two-column card) ──────────────────────────
+// nodes[0..2] = left side, nodes[3..5] = right side
+function Comparison({ data }: { data: DiagramData }) {
+  const nodes = data.nodes.slice(0, 6);
+  // pad to ensure we always have 6
+  while (nodes.length < 6) nodes.push({ label: "—", color: "#525252" });
+  const left  = nodes.slice(0, 3);
+  const right = nodes.slice(3, 6);
+
+  const W = 700, H = 360;
+  const midX = W / 2;
+  const leftColor  = safeColor(left[0].color, 0);
+  const rightColor = safeColor(right[0].color, 3);
+
+  const itemY = (i: number) => 100 + i * 82;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+      <defs>
+        <linearGradient id="leftGrad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor={leftColor} stopOpacity="0.12" />
+          <stop offset="100%" stopColor={leftColor} stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="rightGrad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor={rightColor} stopOpacity="0.04" />
+          <stop offset="100%" stopColor={rightColor} stopOpacity="0.12" />
+        </linearGradient>
+      </defs>
+
+      <rect width={W} height={H} fill={BG} />
+
+      {/* Column backgrounds */}
+      <rect x="20" y="20" width={midX - 36} height={H - 40} rx="16" fill="url(#leftGrad)" stroke={leftColor} strokeWidth="1" strokeOpacity="0.3" />
+      <rect x={midX + 16} y="20" width={midX - 36} height={H - 40} rx="16" fill="url(#rightGrad)" stroke={rightColor} strokeWidth="1" strokeOpacity="0.3" />
+
+      {/* VS divider */}
+      <line x1={midX} y1="40" x2={midX} y2={H - 40} stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" strokeDasharray="6 4" />
+      <rect x={midX - 22} y={H / 2 - 16} width="44" height="32" rx="8" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+      <text x={midX} y={H / 2} textAnchor="middle" dominantBaseline="middle" fill="rgba(255,255,255,0.5)" fontSize="11" fontWeight="700" fontFamily="system-ui,sans-serif">vs</text>
+
+      {/* Column headers */}
+      {/* left header uses center (first part before "/") */}
+      {(() => {
+        const parts = data.center.split(/[\/\|]/).map(s => s.trim());
+        const lHeader = parts[0] || data.center;
+        const rHeader = parts[1] || "";
+        return (
+          <>
+            <rect x="32" y="28" width={midX - 60} height="36" rx="8" fill={leftColor} fillOpacity="0.25" />
+            <text x={midX / 2} y="46" textAnchor="middle" dominantBaseline="middle" fill={leftColor} fontSize="12" fontWeight="700" fontFamily="system-ui,sans-serif">{lHeader}</text>
+            {rHeader && (
+              <>
+                <rect x={midX + 28} y="28" width={midX - 60} height="36" rx="8" fill={rightColor} fillOpacity="0.25" />
+                <text x={midX + (midX / 2)} y="46" textAnchor="middle" dominantBaseline="middle" fill={rightColor} fontSize="12" fontWeight="700" fontFamily="system-ui,sans-serif">{rHeader}</text>
+              </>
+            )}
+          </>
+        );
+      })()}
+
+      {/* Left items */}
+      {left.map((node, i) => {
+        const color = safeColor(node.color, i);
+        const y = itemY(i);
+        return (
+          <g key={`l-${i}`}>
+            <rect x="36" y={y - 26} width={midX - 70} height="52" rx="10" fill={color} fillOpacity="0.12" stroke={color} strokeWidth="1.2" strokeOpacity="0.5" />
+            <circle cx="64" cy={y} r="12" fill={color} fillOpacity="0.4" />
+            <text x="64" y={y} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="10" fontWeight="700" fontFamily="system-ui,sans-serif">{i + 1}</text>
+            <Label x={(36 + 64 + midX - 70) / 2 + 8} y={y} text={node.label} size={11} fill="#f1f5f9" max={13} lineH={14} />
+          </g>
+        );
+      })}
+
+      {/* Right items */}
+      {right.map((node, i) => {
+        const color = safeColor(node.color, i + 3);
+        const y = itemY(i);
+        const rx = midX + 28;
+        return (
+          <g key={`r-${i}`}>
+            <rect x={rx} y={y - 26} width={midX - 70} height="52" rx="10" fill={color} fillOpacity="0.12" stroke={color} strokeWidth="1.2" strokeOpacity="0.5" />
+            <circle cx={rx + 28} cy={y} r="12" fill={color} fillOpacity="0.4" />
+            <text x={rx + 28} y={y} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="10" fontWeight="700" fontFamily="system-ui,sans-serif">{i + 1}</text>
+            <Label x={rx + 28 + (midX - 70 - 28) / 2 + 8} y={y} text={node.label} size={11} fill="#f1f5f9" max={13} lineH={14} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ─── Main export ───────────────────────────────────────────────────────────────
 export default function DiagramRenderer({ data }: { data: DiagramData }) {
   if (!data?.nodes?.length) return null;
   switch (data.diagram_type) {
-    case "flow":  return <Flow  data={data} />;
-    case "cycle": return <Cycle data={data} />;
-    default:      return <HubSpoke data={data} />;
+    case "flow":        return <Flow       data={data} />;
+    case "cycle":       return <Cycle      data={data} />;
+    case "comparison":  return <Comparison data={data} />;
+    default:            return <HubSpoke   data={data} />;
   }
 }

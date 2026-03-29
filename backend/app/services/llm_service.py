@@ -148,34 +148,25 @@ class LLMService:
         )
         return self._extract_content(response)
 
-    def visual_explain_text(
+    def visual_explain_article(
         self,
         numbered_context: str,
         concept: str,
         learner_type: str = "Visual",
     ) -> str:
-        """Call 1: Returns JSON — title, explanation, highlights, references."""
-        user_prompt = prompts.get_visual_text_user_prompt(
+        """
+        Single LLM call that returns the full illustrated article as JSON.
+        Response shape: { title, sections[], references[] }
+        sections[] is an ordered list of TextSection | ImageSection blocks.
+        """
+        user_prompt = prompts.get_visual_article_user_prompt(
             numbered_context, concept, learner_type
         )
         return self._call_llm(
-            system_prompt=prompts.VISUAL_TEXT_SYSTEM_PROMPT,
+            system_prompt=prompts.VISUAL_ARTICLE_SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            temperature=0.3,
-            max_tokens=1200,
-        )
-
-    def visual_explain_diagram(self, concept: str, title: str, highlights: list) -> str:
-        """
-        Returns structured JSON for the diagram: {diagram_type, center, nodes[]}.
-        The frontend renders the actual SVG from this data.
-        """
-        user_prompt = prompts.get_visual_diagram_user_prompt(concept, title, highlights)
-        return self._call_llm(
-            system_prompt=prompts.VISUAL_DIAGRAM_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0.3,
-            max_tokens=400,
+            temperature=0.4,
+            max_tokens=2000,   # 3000 → 2000: Groq counts input+output against request limit
         )
 
 
