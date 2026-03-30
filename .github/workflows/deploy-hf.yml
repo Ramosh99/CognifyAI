@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'backend/**'   # only runs when backend files change
+  workflow_dispatch:   # allows manual trigger from GitHub Actions tab
 
 jobs:
   deploy:
