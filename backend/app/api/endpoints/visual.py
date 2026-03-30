@@ -5,11 +5,12 @@ sections[] is an ordered list of TextSection | ImageSection objects.
 """
 import json
 import re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional, Literal, Union, Annotated
-from typing_extensions import Annotated as Ann
+from typing import List, Optional, Literal, Union, Generator
 
+from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
 from app.services.llm_service import llm_service
 
@@ -18,14 +19,14 @@ router = APIRouter(prefix="/visual", tags=["Visual"])
 
 # ── Request ────────────────────────────────────────────────────────────────────
 
-# Max chars per RAG chunk sent to LLM — keeps total input well under Groq limits
-_CHUNK_CHAR_LIMIT = 600
+# Max chars per RAG chunk sent to LLM — keeps total input well under limits
+_CHUNK_CHAR_LIMIT = 350
 
 class VisualRequest(BaseModel):
     concept: str
     learner_type: str = "Visual"
     topic: Optional[str] = None
-    top_k: int = 4   # reduced from 6 — fewer but sharper context chunks
+    top_k: int = 3   # 3 sharp chunks is plenty for the article
 
 
 # ── Shared sub-models ──────────────────────────────────────────────────────────
@@ -132,13 +133,17 @@ def _strip_fences(raw: str) -> str:
 # ── Endpoint ───────────────────────────────────────────────────────────────────
 
 @router.post("/explain", response_model=VisualResponse)
-def visual_explain(body: VisualRequest):
+def visual_explain(
+    body: VisualRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     if not body.concept.strip():
         raise HTTPException(status_code=400, detail="Concept must not be empty.")
 
-    # 1. Retrieve RAG context
+    # 1. Retrieve RAG context — scoped to this user
     rag_results = rag_service.retrieve(
         query=body.concept,
+        user_id=user_id,
         top_k=body.top_k,
         filter_topic=body.topic or None,
     )
@@ -187,3 +192,116 @@ def visual_explain(body: VisualRequest):
         sections=sections,
         references=references,
     )
+
+
+# ── SSE Streaming endpoint ─────────────────────────────────────────────────────
+
+def _sse(event: str, data: dict) -> str:
+    """Format a single Server-Sent Event."""
+    payload = json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, None]:
+    """Generator that yields SSE events: title → section (one per chunk) → references → done."""
+    # 1. RAG — scoped to this user
+    rag_results = rag_service.retrieve(
+        query=body.concept,
+        user_id=user_id,
+        top_k=body.top_k,
+        filter_topic=body.topic or None,
+    )
+    numbered_context = "\n\n".join(
+        f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(rag_results)
+    )
+
+    # 2. LLM call (full JSON, but we'll parse & stream sections)
+    try:
+        raw = llm_service.visual_explain_article(
+            numbered_context=numbered_context,
+            concept=body.concept,
+            learner_type=body.learner_type,
+        )
+    except Exception as e:
+        yield _sse("error", {"detail": f"LLM error: {e}"})
+        return
+
+    try:
+        data = json.loads(_strip_fences(raw))
+    except json.JSONDecodeError as e:
+        yield _sse("error", {"detail": f"Invalid JSON: {e}"})
+        return
+
+    # 3. Emit title
+    yield _sse("title", {"title": data.get("title", body.concept)})
+
+    # 4. Emit sections one-by-one
+    sections = _parse_sections(data.get("sections", []), body.concept)
+    for section in sections:
+        yield _sse("section", section.model_dump())
+
+    # 5. Emit references
+    references: List[Reference] = []
+    for ref in data.get("references", []):
+        num = ref.get("num", 0)
+        idx = num - 1
+        rag = rag_results[idx] if 0 <= idx < len(rag_results) else {}
+        references.append(Reference(
+            num=num,
+            excerpt=ref.get("excerpt", rag.get("text", ""))[:120],
+            topic=rag.get("topic"),
+            source=rag.get("source"),
+            score=rag.get("score", 0.0),
+        ))
+    yield _sse("references", {"references": [r.model_dump() for r in references]})
+
+    # 6. Done
+    yield _sse("done", {})
+
+
+@router.post("/explain/stream")
+def visual_explain_stream(
+    body: VisualRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """SSE endpoint — emits sections progressively. Only uses the user's own documents."""
+    if not body.concept.strip():
+        raise HTTPException(status_code=400, detail="Concept must not be empty.")
+    return StreamingResponse(
+        _stream_visual(body, user_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── Quick diagram from selected text ──────────────────────────────────────────
+
+class QuickDiagramRequest(BaseModel):
+    text: str
+
+
+class QuickDiagramResponse(BaseModel):
+    diagram: DiagramData
+
+
+@router.post("/diagram", response_model=QuickDiagramResponse)
+def quick_diagram(
+    body: QuickDiagramRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Generate a single diagram from a user-selected text snippet."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text must not be empty.")
+    try:
+        raw = llm_service.generate_diagram_from_selection(text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+    try:
+        data = json.loads(_strip_fences(raw))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid diagram JSON: {e}")
+    return QuickDiagramResponse(diagram=_parse_diagram(data, text[:25]))

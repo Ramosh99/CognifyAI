@@ -7,6 +7,8 @@ This works on all Supabase tiers including the free (Nano) plan.
 Two main operations:
   1. ingest()   — chunk a document, embed the chunks, store in Supabase via REST
   2. retrieve() — embed a query, call the match_documents RPC function for cosine search
+
+Both operations are scoped to a user_id so each user only sees their own data.
 """
 from typing import List, Optional
 import uuid
@@ -29,12 +31,18 @@ class RAGService:
     # Public API
     # ------------------------------------------------------------------ #
 
-    def ingest(self, text_content: str, metadata: Optional[dict] = None) -> int:
+    def ingest(
+        self,
+        text_content: str,
+        user_id: str,
+        metadata: Optional[dict] = None,
+    ) -> int:
         """
         Chunk → embed → store pipeline.
 
         Args:
             text_content: Raw document text to ingest.
+            user_id:      The authenticated user's UUID — data is scoped to this user.
             metadata:     Optional dict with 'topic' and/or 'source' keys.
 
         Returns:
@@ -52,9 +60,10 @@ class RAGService:
             {
                 "id": str(uuid.uuid4()),
                 "text": chunk,
+                "user_id": user_id,               # ← scoped to this user
                 "topic": meta.get("topic"),
                 "source": meta.get("source"),
-                "embedding": vec,          # supabase-py sends this as a JSON array → pgvector accepts it
+                "embedding": vec,
             }
             for chunk, vec in zip(chunks, vectors)
         ]
@@ -70,14 +79,17 @@ class RAGService:
     def retrieve(
         self,
         query: str,
+        user_id: str,
         top_k: int = 5,
         filter_topic: Optional[str] = None,
     ) -> List[dict]:
         """
-        Embed a query and return the top-k most similar document chunks.
+        Embed a query and return the top-k most similar document chunks
+        that belong to the given user.
 
         Args:
             query:        User question or search string.
+            user_id:      Only return chunks belonging to this user.
             top_k:        Number of results to return.
             filter_topic: Optional topic filter (e.g., "networking").
 
@@ -94,6 +106,7 @@ class RAGService:
                 "query_embedding": query_vec,
                 "match_count": top_k,
                 "filter_topic": filter_topic,
+                "p_user_id": user_id,             # ← scoped to this user
             },
         ).execute()
 

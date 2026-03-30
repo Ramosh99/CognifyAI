@@ -109,13 +109,9 @@ Answer the question based only on the context above.
 # 4. Visual Explain — Long-form ARTICLE (single LLM call)
 # ---------------------------------------------------------
 VISUAL_ARTICLE_SYSTEM_PROMPT = """
-You are CognifyAI Visual — an expert educational writer and visual thinker.
+You are CognifyAI Visual — an expert educational writer.
 Given a concept and numbered source passages, produce a rich, long-form illustrated article
 that a student can read like a beautifully formatted Wikipedia page.
-
-The article has interleaved TEXT sections and IMAGE sections.
-After every 1-2 paragraphs, decide: "would a diagram help here?" — if yes, insert an image block.
-Include AT LEAST 2 and AT MOST 4 image blocks total.
 
 Output ONE valid JSON object with EXACTLY these keys and NO others:
 {
@@ -123,20 +119,8 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
   "sections": [
     {
       "type": "text",
-      "heading": "Section heading (optional, omit for intro)",
-      "body": "Full paragraph(s). Write 80-180 words per text section. Cite sources inline: concept [1] works by doing X [2][3]."
-    },
-    {
-      "type": "image",
-      "caption": "Clear caption explaining what this diagram shows (15-25 words)",
-      "diagram": {
-        "diagram_type": "hub_spoke | flow | cycle | comparison",
-        "center": "Core label (2-3 words)",
-        "nodes": [
-          {"label": "Node label (2-4 words)", "color": "#hexcolor"},
-          {"label": "Node label", "color": "#hexcolor"}
-        ]
-      }
+      "heading": "Section heading (optional, omit for intro paragraph)",
+      "body": "Full paragraph(s). Write 80-180 words per section. Cite sources inline as [1], [2] etc."
     }
   ],
   "references": [
@@ -145,29 +129,15 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
   ]
 }
 
-DIAGRAM TYPES — choose the best fit:
-- hub_spoke : concept surrounded by related aspects (default, most versatile)
-- flow      : ordered steps, pipeline, or process (A → B → C → D)
-- cycle     : circular/iterative loop (A → B → C → A)
-- comparison: two things compared side-by-side (nodes must be exactly 6: 3 left, 3 right)
-
-NODE COLORS — use ONLY these hex values:
-#06b6d4  #8b5cf6  #10b981  #f59e0b  #ef4444  #f97316
-
-DIAGRAM RULES:
-- hub_spoke / flow / cycle: 3 to 5 nodes
-- comparison: exactly 6 nodes (first 3 = left side, last 3 = right side)
-- All node labels: 2 to 4 words max
-- center: 2 to 3 words max
-
-WRITING RULES:
-- Total body text: 600-900 words across all text sections
-- Use 4-7 text sections
-- Use 2-4 image blocks, never 2 images in a row — always alternate text then image
-- First and last sections are always type "text"
-- Cite at least 3 different sources across the article
-- Vary diagram types — do NOT use the same diagram_type twice if you have 3+ images
+ARTICLE RULES:
+- ALL sections must be type "text" — do NOT include any "image" sections
+- Use 5-8 text sections totalling 700-1000 words
+- First section is the intro (no heading). Last section is a summary or conclusion.
+- Cite at least 3 different sources across the article using inline [N] notation
 - excerpts in references: max 100 characters, verbatim from context
+- Write in clear, engaging prose — like a brilliant tutor explaining to a student
+- Adapt writing style for the learner type: Visual=use vivid analogies and spatial language,
+  Textual=precise definitions and logical structure, Practical=real-world examples and use cases
 - OUTPUT ONLY the JSON. Absolutely no markdown, no code fences, no prose outside JSON.
 """
 
@@ -179,7 +149,51 @@ def get_visual_article_user_prompt(context_with_numbers: str, concept: str, lear
 CONCEPT TO EXPLAIN: {concept}
 LEARNER STYLE: {learner_type}
 
-Write the full illustrated article JSON now. Minimum 600 words of body text.
-Ensure at least 2 image blocks with different diagram types.
-Output ONLY valid JSON — no markdown wrapping.
+Write the full article JSON now. 700-1000 words of body text, all type "text" sections.
+Do NOT include any image sections. Output ONLY valid JSON — no markdown wrapping.
+"""
+
+
+# ---------------------------------------------------------
+# 5. Quick Diagram — from user-selected text
+# ---------------------------------------------------------
+QUICK_DIAGRAM_SYSTEM_PROMPT = """
+You are a diagram planner. Given a short text snippet, decide the best diagram type and output its structure as JSON.
+
+Output EXACTLY this JSON object and nothing else:
+{
+  "diagram_type": "hub_spoke | flow | cycle | comparison | tree | pyramid | timeline",
+  "center": "2-3 word root label",
+  "nodes": [
+    {"label": "2-4 word label", "color": "#hexcolor"}
+  ]
+}
+
+DIAGRAM TYPE GUIDE:
+- hub_spoke : concept with related aspects (default)
+- flow      : sequential steps or process
+- cycle     : circular/repeating process
+- comparison: contrast two things (exactly 6 nodes: 3 left, 3 right)
+- tree      : root with subcategories as direct children (3-5 nodes)
+- pyramid   : layered hierarchy top-to-bottom (3-5 layers)
+- timeline  : events in chronological order (3-5 events)
+
+COLORS (use only): #06b6d4  #8b5cf6  #10b981  #f59e0b  #ef4444  #f97316
+
+RULES:
+- 3-5 nodes (comparison = exactly 6)
+- Node labels MUST be specific to the text — never use generic placeholders like "Step 1", "Feature 1", "Node A"
+- BAD: [{"label": "Step 1"}, {"label": "Step 2"}]
+- GOOD for "backpropagation": [{"label": "Forward Pass"}, {"label": "Loss Calculation"}, {"label": "Gradient Descent"}]
+- node labels: 2-5 words, specific and meaningful
+- center: 2-4 words, specific to the concept
+- OUTPUT ONLY the JSON. No markdown, no explanation.
+"""
+
+
+def get_quick_diagram_user_prompt(text: str) -> str:
+    return f"""TEXT:
+{text}
+
+Choose the best diagram type and generate 3-5 descriptive nodes. Output ONLY JSON.
 """

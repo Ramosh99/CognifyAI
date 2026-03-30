@@ -2,12 +2,14 @@
 Chat API endpoint
 -----------------
 RAG-grounded multi-turn chatbot. Retrieves relevant document chunks from
-the vector DB, then calls the LLM with the context + conversation history.
+the vector DB (scoped to the authenticated user), then calls the LLM
+with the context + conversation history.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 
+from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
 from app.services.llm_service import llm_service
 
@@ -39,17 +41,21 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/message", response_model=ChatResponse)
-def chat_message(body: ChatRequest):
+def chat_message(
+    body: ChatRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Send a message to the RAG chatbot.
-    Returns an LLM response grounded in retrieved document chunks.
+    Returns an LLM response grounded in the authenticated user's own documents.
     """
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Message must not be empty.")
 
-    # Retrieve relevant context
+    # Retrieve context — only this user's documents
     rag_results = rag_service.retrieve(
         query=body.message,
+        user_id=user_id,
         top_k=body.top_k,
         filter_topic=body.topic or None,
     )

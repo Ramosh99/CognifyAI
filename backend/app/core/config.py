@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Supabase / PostgreSQL
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
+    SUPABASE_JWT_SECRET: str = ""   # Project Settings → API → JWT Secret
     DATABASE_URL: str = ""
 
     model_config = {

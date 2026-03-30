@@ -10,18 +10,26 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 2. Documents table (stores text chunks + their vector embeddings)
 CREATE TABLE IF NOT EXISTS documents (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID,                          -- Supabase auth.uid() — data owner
     text        TEXT        NOT NULL,
     topic       VARCHAR(255),
     source      VARCHAR(512),
-    embedding   VECTOR(768),          -- BAAI/bge-base-en-v1.5 = 768 dims
+    embedding   VECTOR(768),                   -- BAAI/bge-base-en-v1.5 = 768 dims
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 2b. Add user_id to existing documents table (safe if column already exists)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id UUID;
 
 -- 3. Index for fast cosine similarity search on embeddings
 CREATE INDEX IF NOT EXISTS documents_embedding_idx
     ON documents
     USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
+
+-- 3b. Index for fast user-scoped queries
+CREATE INDEX IF NOT EXISTS documents_user_id_idx
+    ON documents (user_id);
 
 -- 4. Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -52,12 +60,13 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
     created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Semantic search function (used by RAG service)
---    Returns top-k most similar chunks using cosine distance.
+-- 7. Semantic search function (user-scoped)
+--    Returns top-k most similar chunks for a specific user using cosine distance.
 CREATE OR REPLACE FUNCTION match_documents(
     query_embedding VECTOR(768),
     match_count     INT     DEFAULT 5,
-    filter_topic    VARCHAR DEFAULT NULL
+    filter_topic    VARCHAR DEFAULT NULL,
+    p_user_id       UUID    DEFAULT NULL    -- only return this user's documents
 )
 RETURNS TABLE (
     id      UUID,
@@ -78,8 +87,13 @@ BEGIN
         1 - (d.embedding <=> query_embedding) AS score
     FROM documents d
     WHERE
-        filter_topic IS NULL OR d.topic = filter_topic
+        (p_user_id IS NULL OR d.user_id = p_user_id)
+        AND (filter_topic IS NULL OR d.topic = filter_topic)
     ORDER BY d.embedding <=> query_embedding
     LIMIT match_count;
 END;
 $$;
+
+-- 8. (Optional) Clean up old documents with no user_id
+--    Uncomment and run this if you want to remove shared/legacy data:
+-- DELETE FROM documents WHERE user_id IS NULL;

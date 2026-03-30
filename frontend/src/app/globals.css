@@ -605,3 +605,83 @@ p, li { color: var(--text-secondary); }
   background: var(--bg-card);
   border-color: var(--border-light);
 }
+
+/* ── Streaming / generation animations ────────────────────────── */
+
+/* Section streams in from slightly below */
+@keyframes sectionStream {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.section-stream {
+  animation: sectionStream 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Diagram card pops in from slightly smaller + invisible */
+@keyframes diagramPop {
+  from { opacity: 0; transform: scale(0.93) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+.diagram-pop {
+  animation: diagramPop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Inline diagram insertion — expands from 0 height */
+@keyframes expandIn {
+  from { max-height: 0;    opacity: 0; }
+  to   { max-height: 700px; opacity: 1; }
+}
+.diagram-expand {
+  animation: expandIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow: hidden;
+}
+
+/* Popover scales in from selection point */
+@keyframes popoverIn {
+  from { opacity: 0; transform: translateX(-50%) scale(0.88) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1)    translateY(0);    }
+}
+.popover-animated {
+  animation: popoverIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Toast fly-up in */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);    }
+}
+/* Toast fade out */
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(8px); }
+}
+.toast-in  { animation: toastIn  0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.toast-out { animation: toastOut 0.22s cubic-bezier(0.4, 0, 1, 1)    both; }
+
+/* Typewriter cursor on streaming text */
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+.typewriter-cursor::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 0.9s step-end infinite;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* Skeleton shimmer for loading placeholders */
+@keyframes shimmer {
+  from { background-position: -600px 0; }
+  to   { background-position:  600px 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(128,128,128,0.06) 25%,
+    rgba(128,128,128,0.14) 50%,
+    rgba(128,128,128,0.06) 75%
+  );
+  background-size: 600px 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+}

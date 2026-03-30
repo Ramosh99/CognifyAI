@@ -9,7 +9,8 @@ from app.core import prompts
 class LLMService:
     def __init__(self):
         self._client = Groq(api_key=settings.GROQ_API_KEY)
-        self.default_model = "groq/compound"
+        self.default_model = "compound-beta"          # fast, small calls
+        self.article_model = "llama-3.3-70b-versatile" # 128k ctx, long-form
 
     def _extract_content(self, response) -> str:
         """
@@ -47,17 +48,18 @@ class LLMService:
         user_prompt: str,
         temperature: float = 0.5,
         max_tokens: int = 1024,
+        model: Optional[str] = None,
     ) -> str:
-        """Helper to invoke the Groq Compound model."""
+        """Invoke Groq. Pass model= to override the default."""
         if not settings.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY is not configured in .env")
-
+        _model = model or self.default_model
         try:
             response = self._client.chat.completions.create(
-                model=self.default_model,
+                model=_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user",   "content": user_prompt},
                 ],
                 temperature=temperature,
                 max_completion_tokens=max_tokens,
@@ -154,11 +156,7 @@ class LLMService:
         concept: str,
         learner_type: str = "Visual",
     ) -> str:
-        """
-        Single LLM call that returns the full illustrated article as JSON.
-        Response shape: { title, sections[], references[] }
-        sections[] is an ordered list of TextSection | ImageSection blocks.
-        """
+        """Single LLM call → full illustrated article JSON (title, sections[], references[])."""
         user_prompt = prompts.get_visual_article_user_prompt(
             numbered_context, concept, learner_type
         )
@@ -166,7 +164,17 @@ class LLMService:
             system_prompt=prompts.VISUAL_ARTICLE_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.4,
-            max_tokens=2000,   # 3000 → 2000: Groq counts input+output against request limit
+            max_tokens=1800,
+            model=self.article_model,  # use high-context model
+        )
+
+    def generate_diagram_from_selection(self, text: str) -> str:
+        """Fast single call: pick best diagram type for a short text snippet."""
+        return self._call_llm(
+            system_prompt=prompts.QUICK_DIAGRAM_SYSTEM_PROMPT,
+            user_prompt=prompts.get_quick_diagram_user_prompt(text[:600]),
+            temperature=0.3,
+            max_tokens=350,
         )
 
 
