@@ -115,11 +115,31 @@ export type VisualReference = {
   score: number;
 };
 
-export type DiagramNode = { label: string; color: string };
+export type DiagramNode = {
+  id: string;
+  label: string;
+  color: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  shape: "rect" | "circle";
+};
+
+export type DiagramEdge = {
+  source: string;
+  target: string;
+  label?: string | null;
+  points: [number, number][];
+  marker: "arrow" | "none";
+};
+
 export type DiagramData = {
-  diagram_type: "hub_spoke" | "flow" | "cycle" | "comparison" | string;
-  center: string;
+  title: string;
+  layout_type: string;
+  viewbox: { w: number; h: number };
   nodes: DiagramNode[];
+  edges: DiagramEdge[];
 };
 
 export type TextSection = {

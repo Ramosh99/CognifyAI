@@ -169,12 +169,14 @@ class LLMService:
         )
 
     def generate_diagram_from_selection(self, text: str) -> str:
-        """Fast single call: pick best diagram type for a short text snippet."""
+        """Single call: emit a semantic graph (nodes + edges) for a short text snippet.
+        The layout solver, not the LLM, picks coordinates."""
         return self._call_llm(
             system_prompt=prompts.QUICK_DIAGRAM_SYSTEM_PROMPT,
             user_prompt=prompts.get_quick_diagram_user_prompt(text[:600]),
             temperature=0.3,
-            max_tokens=350,
+            max_tokens=700,
+            model=self.article_model,
         )
 
 

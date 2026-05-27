@@ -8,11 +8,12 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional, Literal, Union, Generator
+from typing import Dict, List, Optional, Literal, Tuple, Union, Generator
 
 from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
 from app.services.llm_service import llm_service
+from app.services import layout_solver as ls
 
 router = APIRouter(prefix="/visual", tags=["Visual"])
 
@@ -39,15 +40,31 @@ class Reference(BaseModel):
     score: float = 0.0
 
 
-class DiagramNode(BaseModel):
+class LaidOutNode(BaseModel):
+    id: str
     label: str
     color: str = "#6366f1"
+    x: float
+    y: float
+    w: float
+    h: float
+    shape: Literal["rect", "circle"] = "rect"
+
+
+class LaidOutEdge(BaseModel):
+    source: str
+    target: str
+    label: Optional[str] = None
+    points: List[Tuple[float, float]]
+    marker: Literal["arrow", "none"] = "arrow"
 
 
 class DiagramData(BaseModel):
-    diagram_type: str = "hub_spoke"
-    center: str
-    nodes: List[DiagramNode]
+    title: str = ""
+    layout_type: str
+    viewbox: Dict[str, float]
+    nodes: List[LaidOutNode]
+    edges: List[LaidOutEdge]
 
 
 # ── Section types ──────────────────────────────────────────────────────────────
@@ -86,19 +103,63 @@ def _safe_color(c: str, idx: int) -> str:
     return c if VALID_HEX.match(c) else _FALLBACK_COLORS[idx % len(_FALLBACK_COLORS)]
 
 
+_MAX_NODES = 10
+
+
 def _parse_diagram(raw: dict, fallback_label: str) -> DiagramData:
-    nodes = []
-    for i, n in enumerate(raw.get("nodes", [])[:6]):
-        nodes.append(DiagramNode(
-            label=str(n.get("label", ""))[:30],
+    """LLM-emitted graph plan → solved layout with geometry."""
+    raw_nodes = raw.get("nodes", []) or []
+    in_nodes: List[ls.InputNode] = []
+    seen_ids: set[str] = set()
+    for i, n in enumerate(raw_nodes[:_MAX_NODES]):
+        nid = str(n.get("id") or f"n{i+1}")
+        if nid in seen_ids:
+            nid = f"{nid}_{i}"
+        seen_ids.add(nid)
+        in_nodes.append(ls.InputNode(
+            id=nid,
+            label=str(n.get("label", ""))[:60].strip() or f"Node {i+1}",
             color=_safe_color(n.get("color", ""), i),
+            role=(n.get("role") or None),
         ))
-    if not nodes:
-        nodes = [DiagramNode(label="Key concept", color="#6366f1")]
+    if not in_nodes:
+        in_nodes = [ls.InputNode(id="n1", label=fallback_label or "Key concept", color="#6366f1")]
+
+    valid_ids = {n.id for n in in_nodes}
+    in_edges: List[ls.InputEdge] = []
+    for e in (raw.get("edges", []) or [])[:30]:
+        src = str(e.get("source") or e.get("from") or "")
+        dst = str(e.get("target") or e.get("to") or "")
+        if src in valid_ids and dst in valid_ids and src != dst:
+            in_edges.append(ls.InputEdge(
+                src=src, dst=dst,
+                label=(str(e["label"])[:30] if e.get("label") else None),
+            ))
+
+    plan = ls.GraphPlan(
+        title=str(raw.get("title", fallback_label))[:60],
+        nodes=in_nodes,
+        edges=in_edges,
+        intent=(raw.get("intent") or None),
+    )
+    solved = ls.solve(plan)
+
     return DiagramData(
-        diagram_type=raw.get("diagram_type", "hub_spoke"),
-        center=str(raw.get("center", fallback_label))[:25],
-        nodes=nodes,
+        title=solved.title,
+        layout_type=solved.layout_type,
+        viewbox=solved.viewbox,
+        nodes=[
+            LaidOutNode(
+                id=n.id, label=n.label, color=n.color,
+                x=n.x, y=n.y, w=n.w, h=n.h, shape=n.shape,
+            ) for n in solved.nodes
+        ],
+        edges=[
+            LaidOutEdge(
+                source=e.src, target=e.dst, label=e.label,
+                points=e.points, marker=e.marker,
+            ) for e in solved.edges
+        ],
     )
 
 

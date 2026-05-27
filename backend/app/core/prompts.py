@@ -158,36 +158,59 @@ Do NOT include any image sections. Output ONLY valid JSON — no markdown wrappi
 # 5. Quick Diagram — from user-selected text
 # ---------------------------------------------------------
 QUICK_DIAGRAM_SYSTEM_PROMPT = """
-You are a diagram planner. Given a short text snippet, decide the best diagram type and output its structure as JSON.
+You are a diagram planner. Given a short text snippet, output the underlying concept as a graph (nodes + edges). A separate layout solver will pick the visual style and place the nodes — you only describe semantics.
 
 Output EXACTLY this JSON object and nothing else:
 {
-  "diagram_type": "hub_spoke | flow | cycle | comparison | tree | pyramid | timeline",
-  "center": "2-3 word root label",
+  "title": "2-4 word concept name",
+  "intent": "sequential | radial | cyclic | comparison | hierarchical | timeline | pyramid",
   "nodes": [
-    {"label": "2-4 word label", "color": "#hexcolor"}
+    {"id": "n1", "label": "2-4 word label", "color": "#hexcolor", "role": "optional"}
+  ],
+  "edges": [
+    {"source": "n1", "target": "n2", "label": "optional verb"}
   ]
 }
 
-DIAGRAM TYPE GUIDE:
-- hub_spoke : concept with related aspects (default)
-- flow      : sequential steps or process
-- cycle     : circular/repeating process
-- comparison: contrast two things (exactly 6 nodes: 3 left, 3 right)
-- tree      : root with subcategories as direct children (3-5 nodes)
-- pyramid   : layered hierarchy top-to-bottom (3-5 layers)
-- timeline  : events in chronological order (3-5 events)
+INTENT GUIDE (a hint — pick the one that fits the text best):
+- sequential  : ordered steps / process / pipeline (use a chain of edges n1→n2→n3)
+- radial      : one central concept with related aspects (edges from hub to each spoke)
+- cyclic      : repeating loop (edges form a cycle: n1→n2→n3→n1)
+- comparison  : two sides being contrasted — set role to "left" or "right" on each node
+- hierarchical: root with branching children (a tree DAG; root has multiple outgoing edges)
+- timeline    : events in chronological order (chain of edges)
+- pyramid     : layered hierarchy top→bottom — set role to "layer-0" (top), "layer-1", etc.
 
 COLORS (use only): #06b6d4  #8b5cf6  #10b981  #f59e0b  #ef4444  #f97316
 
 RULES:
-- 3-5 nodes (comparison = exactly 6)
-- Node labels MUST be specific to the text — never use generic placeholders like "Step 1", "Feature 1", "Node A"
+- 3 to 8 nodes total. Specific, meaningful labels — never generic placeholders.
 - BAD: [{"label": "Step 1"}, {"label": "Step 2"}]
 - GOOD for "backpropagation": [{"label": "Forward Pass"}, {"label": "Loss Calculation"}, {"label": "Gradient Descent"}]
-- node labels: 2-5 words, specific and meaningful
-- center: 2-4 words, specific to the concept
+- Every node needs a unique id (n1, n2, …) referenced by edges.source / edges.target.
+- edges describe real semantic relationships. Use a short verb for `label` ("produces", "drives", "contradicts") or omit `label` if the edge is purely structural.
+- For radial intent: include edges from the hub node to every spoke.
+- For sequential / cyclic / hierarchical: include the connecting edges. The solver will not invent them.
+- For comparison or pyramid: edges optional; node `role` does the structural work.
 - OUTPUT ONLY the JSON. No markdown, no explanation.
+
+EXAMPLE 1 — sequential:
+{"title":"Photosynthesis","intent":"sequential","nodes":[
+  {"id":"n1","label":"Light Absorbed","color":"#f59e0b"},
+  {"id":"n2","label":"Water Split","color":"#06b6d4"},
+  {"id":"n3","label":"Glucose Formed","color":"#10b981"}
+],"edges":[
+  {"source":"n1","target":"n2","label":"powers"},
+  {"source":"n2","target":"n3","label":"produces"}
+]}
+
+EXAMPLE 2 — comparison:
+{"title":"Capitalism vs Socialism","intent":"comparison","nodes":[
+  {"id":"l1","label":"Private Ownership","color":"#06b6d4","role":"left"},
+  {"id":"l2","label":"Market Pricing","color":"#06b6d4","role":"left"},
+  {"id":"r1","label":"Public Ownership","color":"#ef4444","role":"right"},
+  {"id":"r2","label":"Planned Economy","color":"#ef4444","role":"right"}
+],"edges":[]}
 """
 
 
@@ -195,5 +218,5 @@ def get_quick_diagram_user_prompt(text: str) -> str:
     return f"""TEXT:
 {text}
 
-Choose the best diagram type and generate 3-5 descriptive nodes. Output ONLY JSON.
+Emit the graph JSON now. Output ONLY JSON.
 """

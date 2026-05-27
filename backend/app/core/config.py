@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # LLM
     GROQ_API_KEY: str = ""
 
+    # Embeddings
+    # Dedicated embedding Space. Required so this backend stays lightweight.
+    EMBEDDING_SERVICE_URL: str = ""
+    EMBEDDING_SERVICE_TOKEN: str = ""
+    EMBEDDING_SERVICE_TIMEOUT: float = 120.0
+
     # Supabase / PostgreSQL
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""

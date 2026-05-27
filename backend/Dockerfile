@@ -10,11 +10,11 @@ ENV HOME=/home/user \
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy the requirements file first to leverage Docker cache
-COPY --chown=user requirements.txt .
+# Copy the lightweight backend requirements first to leverage Docker cache
+COPY --chown=user requirements.backend.txt .
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.backend.txt
 
 # Copy the rest of the backend source code
 COPY --chown=user . .
