@@ -1,6 +1,7 @@
 import json
-from groq import Groq
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, Generator, List, Optional
+
+import requests
 
 from app.core.config import settings
 from app.core import prompts
@@ -8,39 +9,63 @@ from app.core import prompts
 
 class LLMService:
     def __init__(self):
-        self._client = Groq(api_key=settings.GROQ_API_KEY)
-        self.default_model = "compound-beta"          # fast, small calls
-        self.article_model = "llama-3.3-70b-versatile" # 128k ctx, long-form
+        self.default_model = settings.GEMINI_MODEL
+        self.article_model = settings.GEMINI_MODEL
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
-    def _extract_content(self, response) -> str:
-        """
-        Safely extract text content from a Groq response.
-        """
-        if response is None:
-            raise ValueError("LLM returned a None response object.")
+    def _headers(self) -> Dict[str, str]:
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not configured in .env")
+        return {
+            "Content-Type": "application/json",
+            "X-goog-api-key": settings.GEMINI_API_KEY,
+        }
 
-        choices = getattr(response, "choices", None)
-        if not choices:
-            err = getattr(response, "error", None)
-            if err:
-                raise ValueError(f"LLM API error: {err}")
-            raise ValueError("LLM returned an empty choices list.")
+    def _url(self, method: str, model: Optional[str] = None) -> str:
+        return f"{self.base_url}/models/{model or self.default_model}:{method}"
 
-        choice = choices[0]
-        message = getattr(choice, "message", None)
-        content = getattr(message, "content", None) if message else None
+    def _build_payload(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float,
+        max_tokens: int,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        contents: List[Dict[str, Any]] = []
 
-        if content is None:
-            finish = getattr(choice, "finish_reason", "unknown")
-            refusal = getattr(message, "refusal", None) if message else None
-            if refusal:
-                raise ValueError(f"Model refused to answer: {refusal}")
-            raise ValueError(
-                f"LLM returned null content (finish_reason='{finish}'). "
-                "Try a different model or rephrase your request."
+        for turn in (history or [])[-10:]:
+            role = "model" if turn.get("role") == "assistant" else "user"
+            contents.append(
+                {"role": role, "parts": [{"text": turn.get("content", "")}]}
             )
 
-        return content.strip()
+        contents.append({"role": "user", "parts": [{"text": user_prompt}]})
+
+        return {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+                "topP": 1,
+            },
+        }
+
+    def _extract_content(self, payload: Dict[str, Any]) -> str:
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            error = payload.get("error")
+            if error:
+                raise ValueError(f"LLM API error: {error}")
+            raise ValueError("LLM returned no candidates.")
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        text = "".join(part.get("text", "") for part in parts).strip()
+        if not text:
+            finish = candidates[0].get("finishReason", "unknown")
+            raise ValueError(f"LLM returned empty content (finishReason='{finish}').")
+        return text
 
     def _call_llm(
         self,
@@ -49,24 +74,25 @@ class LLMService:
         temperature: float = 0.5,
         max_tokens: int = 1024,
         model: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
-        """Invoke Groq. Pass model= to override the default."""
-        if not settings.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is not configured in .env")
-        _model = model or self.default_model
+        """Invoke Gemini. Pass model= to override the default."""
         try:
-            response = self._client.chat.completions.create(
-                model=_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_prompt},
-                ],
-                temperature=temperature,
-                max_completion_tokens=max_tokens,
-                top_p=1,
-                stream=False,
+            response = requests.post(
+                self._url("generateContent", model),
+                headers=self._headers(),
+                json=self._build_payload(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    history=history,
+                ),
+                timeout=settings.GEMINI_TIMEOUT,
             )
-            return self._extract_content(response)
+            if response.status_code >= 400:
+                raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+            return self._extract_content(response.json())
         except Exception as e:
             print(f"LLM Error: {e}")
             raise
@@ -129,26 +155,98 @@ class LLMService:
         """
         RAG-grounded multi-turn chat. History is a list of {"role": "user"/"assistant", "content": "..."}.
         """
-        if not settings.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is not configured in .env")
-
         combined_context = "\n\n---\n\n".join(context_chunks)
         user_prompt = prompts.get_chat_user_prompt(combined_context, message)
 
-        messages = [{"role": "system", "content": prompts.CHAT_SYSTEM_PROMPT}]
-        for turn in (history or [])[-10:]:
-            messages.append({"role": turn["role"], "content": turn["content"]})
-        messages.append({"role": "user", "content": user_prompt})
-
-        response = self._client.chat.completions.create(
-            model=self.default_model,
-            messages=messages,
+        return self._call_llm(
+            system_prompt=prompts.CHAT_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
             temperature=0.5,
-            max_completion_tokens=1024,
-            top_p=1,
-            stream=False,
+            max_tokens=1024,
+            history=history,
         )
-        return self._extract_content(response)
+
+    def general_chat(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        return self._call_llm(
+            system_prompt=prompts.GENERAL_CHAT_SYSTEM_PROMPT,
+            user_prompt=prompts.get_general_chat_user_prompt(message),
+            temperature=0.5,
+            max_tokens=700,
+            history=history,
+        )
+
+    def stream_general_chat(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Generator[str, None, None]:
+        payload = self._build_payload(
+            system_prompt=prompts.GENERAL_CHAT_SYSTEM_PROMPT,
+            user_prompt=prompts.get_general_chat_user_prompt(message),
+            temperature=0.5,
+            max_tokens=700,
+            history=history,
+        )
+
+        response = requests.post(
+            f"{self._url('streamGenerateContent')}?alt=sse",
+            headers=self._headers(),
+            json=payload,
+            timeout=settings.GEMINI_TIMEOUT,
+            stream=True,
+        )
+        if response.status_code >= 400:
+            raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            chunk = json.loads(line.removeprefix("data: "))
+            parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in parts:
+                text = part.get("text")
+                if text:
+                    yield text
+
+    def stream_chat(
+        self,
+        context_chunks: List[str],
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Generator[str, None, None]:
+        combined_context = "\n\n---\n\n".join(context_chunks)
+        user_prompt = prompts.get_chat_user_prompt(combined_context, message)
+        payload = self._build_payload(
+            system_prompt=prompts.CHAT_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.5,
+            max_tokens=1024,
+            history=history,
+        )
+
+        response = requests.post(
+            f"{self._url('streamGenerateContent')}?alt=sse",
+            headers=self._headers(),
+            json=payload,
+            timeout=settings.GEMINI_TIMEOUT,
+            stream=True,
+        )
+        if response.status_code >= 400:
+            raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            chunk = json.loads(line.removeprefix("data: "))
+            parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in parts:
+                text = part.get("text")
+                if text:
+                    yield text
 
     def visual_explain_article(
         self,

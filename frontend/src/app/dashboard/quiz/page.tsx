@@ -65,7 +65,7 @@ export default function QuizPage() {
   const score = Object.entries(answers).filter(([qi, key]) => questions[Number(qi)]?.correct_key === key).length;
 
   return (
-    <div style={{ maxWidth: "780px" }}>
+    <div style={{ maxWidth: "780px", width: "100%" }}>
       <h1>Quiz</h1>
       <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
         Generate concept-aware MCQs. Pick a wrong answer to see why you were wrong.

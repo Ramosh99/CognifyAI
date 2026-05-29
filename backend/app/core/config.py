@@ -1,5 +1,4 @@
 from typing import List
-from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +14,11 @@ class Settings(BaseSettings):
 
     # LLM
     GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_ARTICLE_MODEL: str = "llama-3.3-70b-versatile"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_TIMEOUT: float = 120.0
 
     # Embeddings
     # Dedicated embedding Space. Required so this backend stays lightweight.

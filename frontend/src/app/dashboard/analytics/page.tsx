@@ -12,7 +12,7 @@ export default function AnalyticsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: "860px" }}>
+    <div style={{ maxWidth: "860px", width: "100%" }}>
       <h1>Analytics</h1>
       <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
         Track weak topics and misconception patterns over time.

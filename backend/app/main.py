@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.endpoints import documents, learning, chat, visual
+from app.api.endpoints import agent, documents, learning, chat, visual
 
 # Register pgvector type with SQLAlchemy
 from pgvector.sqlalchemy import Vector  # noqa: F401 — side-effect import registers the type
@@ -26,6 +26,7 @@ app.include_router(documents.router, prefix=settings.API_V1_STR)
 app.include_router(learning.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(visual.router, prefix=settings.API_V1_STR)
+app.include_router(agent.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health")

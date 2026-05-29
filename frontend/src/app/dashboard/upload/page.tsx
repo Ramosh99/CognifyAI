@@ -45,7 +45,7 @@ export default function UploadPage() {
   };
 
   return (
-    <div style={{ maxWidth: "780px" }}>
+    <div style={{ maxWidth: "780px", width: "100%" }}>
       <h1>Upload</h1>
       <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
         Ingest a PDF, TXT file, or paste raw text into the knowledge base.

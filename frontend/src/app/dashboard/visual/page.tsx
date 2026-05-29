@@ -388,7 +388,7 @@ export default function VisualPage() {
   const hasContent = title !== null;
 
   return (
-    <div style={{ maxWidth: "760px" }}>
+    <div style={{ maxWidth: "760px", width: "100%" }}>
 
       {/* Toast */}
       {toast && (

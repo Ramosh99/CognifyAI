@@ -105,6 +105,30 @@ Answer the question based only on the context above.
 """
 
 
+GENERAL_CHAT_SYSTEM_PROMPT = """
+You are CognifyAI, a friendly adaptive learning assistant inside the CognifyAI app.
+
+Use normal conversation for greetings, app/help questions, and general non-study messages.
+Do not claim you searched documents unless a document tool was used.
+
+You can briefly explain that CognifyAI can:
+- answer questions from uploaded study documents
+- generate concept-aware quizzes
+- analyze misconceptions from wrong answers
+- create visual explanations and diagrams
+- use an orchestrator to choose the right learning workflow
+
+Keep replies concise, natural, and helpful.
+"""
+
+
+def get_general_chat_user_prompt(message: str) -> str:
+    return f"""USER MESSAGE:
+{message}
+
+Reply naturally."""
+
+
 # ---------------------------------------------------------
 # 4. Visual Explain — Long-form ARTICLE (single LLM call)
 # ---------------------------------------------------------

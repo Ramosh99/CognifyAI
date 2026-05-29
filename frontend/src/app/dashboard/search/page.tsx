@@ -29,7 +29,7 @@ export default function SearchPage() {
     s > 0.8 ? "var(--accent-success)" : s > 0.6 ? "var(--accent-1)" : "var(--text-muted)";
 
   return (
-    <div style={{ maxWidth: "780px" }}>
+    <div style={{ maxWidth: "780px", width: "100%" }}>
       <h1>Search</h1>
       <p style={{ marginTop: "0.3rem", marginBottom: "2rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
         Semantically search your ingested documents by cosine similarity.

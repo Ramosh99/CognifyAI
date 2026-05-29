@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessage, ChatHistoryMessage, ChatSource } from "@/lib/api";
+import { sendChatMessageStream, ChatHistoryMessage, ChatSource } from "@/lib/api";
 
 type Message = {
   id: number;
@@ -46,13 +46,53 @@ export default function ChatPage() {
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      const res = await sendChatMessage({ message: text, history, topic: topic || undefined });
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === thinkingMsg.id
-            ? { ...m, content: res.response, sources: res.sources, loading: false }
-            : m
-        )
+      await sendChatMessageStream(
+        { message: text, history, topic: topic || undefined },
+        {
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === thinkingMsg.id ? { ...m, sources } : m))
+            );
+          },
+          onStatus: (status) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id && !m.content
+                  ? { ...m, content: status, loading: true }
+                  : m
+              )
+            );
+          },
+          onToken: (token) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id
+                  ? {
+                      ...m,
+                      content: m.loading ? token : m.content + token,
+                      loading: false,
+                    }
+                  : m
+              )
+            );
+          },
+          onDone: () => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id ? { ...m, loading: false } : m
+              )
+            );
+          },
+          onError: (detail) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id
+                  ? { ...m, content: detail, loading: false }
+                  : m
+              )
+            );
+          },
+        }
       );
     } catch (e: unknown) {
       setMessages((prev) =>
@@ -85,7 +125,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 5rem)", maxWidth: "780px" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 5rem)", maxWidth: "780px", width: "100%", margin: "0 auto" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexShrink: 0 }}>
         <div>
@@ -168,7 +208,7 @@ export default function ChatPage() {
               >
                 {msg.loading ? (
                   <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)" }}>
-                    <span className="spinner" /> Thinking...
+                    <span className="spinner" /> {msg.content || "Thinking..."}
                   </span>
                 ) : (
                   msg.content

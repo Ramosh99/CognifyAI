@@ -105,6 +105,80 @@ export const sendChatMessage = (body: {
   topic?: string;
 }) => api<ChatResponse>("/chat/message", { method: "POST", body: JSON.stringify(body) });
 
+export type ChatStreamCallbacks = {
+  onStatus?: (message: string) => void;
+  onSources: (sources: ChatSource[]) => void;
+  onToken: (text: string) => void;
+  onDone: () => void;
+  onError: (detail: string) => void;
+};
+
+export async function sendChatMessageStream(
+  body: {
+    message: string;
+    history: ChatHistoryMessage[];
+    topic?: string;
+  },
+  cbs: ChatStreamCallbacks,
+): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${BASE}/chat/message/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    cbs.onError(err.detail ?? "Stream failed");
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split(/\n\n/);
+    buffer = events.pop() ?? "";
+
+    for (const raw of events) {
+      const lines = raw.trim().split("\n");
+      const eventLine = lines.find((line) => line.startsWith("event:"));
+      const dataLine = lines.find((line) => line.startsWith("data:"));
+      if (!eventLine || !dataLine) continue;
+
+      const event = eventLine.slice("event:".length).trim();
+      const data = JSON.parse(dataLine.slice("data:".length).trim());
+
+      switch (event) {
+        case "status":
+          cbs.onStatus?.(data.message ?? "");
+          break;
+        case "sources":
+          cbs.onSources(data as ChatSource[]);
+          break;
+        case "token":
+          cbs.onToken(data.text ?? "");
+          break;
+        case "done":
+          cbs.onDone();
+          return;
+        case "error":
+          cbs.onError(data.detail ?? "Stream failed");
+          return;
+      }
+    }
+  }
+}
+
 // ── Visual Explain ─────────────────────────────────────
 
 export type VisualReference = {
@@ -235,4 +309,3 @@ export type QuickDiagramResponse = { diagram: DiagramData };
 
 export const generateDiagramFromSelection = (body: { text: string }) =>
   api<QuickDiagramResponse>("/visual/diagram", { method: "POST", body: JSON.stringify(body) });
-

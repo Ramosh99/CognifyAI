@@ -7,7 +7,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div>
+    <div style={{ maxWidth: "860px", width: "100%" }}>
       {/* Header */}
       <div style={{ marginBottom: "2.5rem" }}>
         <h1>Welcome back</h1>

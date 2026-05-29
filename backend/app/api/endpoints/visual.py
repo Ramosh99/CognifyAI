@@ -208,7 +208,7 @@ def visual_explain(
         top_k=body.top_k,
         filter_topic=body.topic or None,
     )
-    # Truncate each chunk to avoid 413 "request too large" from Groq
+    # Truncate each chunk to avoid oversized LLM requests.
     numbered_context = "\n\n".join(
         f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(rag_results)
     )
