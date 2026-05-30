@@ -47,6 +47,7 @@ def generate_quiz(
     """
     if not body.topic.strip():
         raise HTTPException(status_code=400, detail="Topic is required.")
+    question_count = min(max(body.question_count, 1), 10)
 
     # Retrieve context from this user's documents. Empty results fall back to a
     # general tutor quiz instead of blocking the learner.
@@ -64,13 +65,13 @@ def generate_quiz(
                 context_chunks=context_chunks,
                 topic=body.topic,
                 learner_type=body.learner_type,
-                count=body.question_count,
+                count=question_count,
             )
         else:
             questions_json = llm_service.generate_general_quiz(
                 topic=body.topic,
                 learner_type=body.learner_type,
-                count=body.question_count,
+                count=question_count,
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate quiz: {e}")

@@ -4,6 +4,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 import requests
 
+from app.agents.quiz_tools import normalize_quiz
 from app.core.config import settings
 from app.core import prompts
 
@@ -138,13 +139,14 @@ class LLMService:
             system_prompt=prompts.QUIZ_GENERATION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.3,
+            max_tokens=max(1800, count * 900),
         )
 
         try:
-            return self.parse_json_response(raw_response)
-        except json.JSONDecodeError as e:
+            return normalize_quiz(self.parse_json_response(raw_response), topic, count)
+        except (json.JSONDecodeError, ValueError) as e:
             print(f"Failed to parse LLM JSON: {raw_response}")
-            raise ValueError("LLM did not return valid JSON.") from e
+            return normalize_quiz([], topic, count)
 
     def generate_general_quiz(
         self,
@@ -158,13 +160,14 @@ class LLMService:
             system_prompt=prompts.QUIZ_GENERATION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.4,
+            max_tokens=max(1800, count * 900),
         )
 
         try:
-            return self.parse_json_response(raw_response)
-        except json.JSONDecodeError as e:
+            return normalize_quiz(self.parse_json_response(raw_response), topic, count)
+        except (json.JSONDecodeError, ValueError) as e:
             print(f"Failed to parse LLM JSON: {raw_response}")
-            raise ValueError("LLM did not return valid JSON.") from e
+            return normalize_quiz([], topic, count)
 
     def analyze_misconception(
         self,

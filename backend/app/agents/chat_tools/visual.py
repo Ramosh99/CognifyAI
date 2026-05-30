@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-from app.api.endpoints.visual import _parse_diagram
+from app.agents.visual_tools import build_diagram
 from app.services.llm_service import llm_service
 
 
@@ -24,9 +24,7 @@ def answer_visual_question(
 
     blocks = [{"type": "text", "text": response}]
     try:
-        raw_diagram = llm_service.generate_diagram_from_selection(message)
-        diagram_plan = llm_service.parse_json_response(raw_diagram)
-        diagram = _parse_diagram(diagram_plan, message[:25])
+        diagram = build_diagram(message)
         blocks.append({"type": "diagram", "diagram": diagram.model_dump()})
     except Exception:
         pass

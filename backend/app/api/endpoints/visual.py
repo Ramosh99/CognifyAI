@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Literal, Tuple, Union, Generator
 
+from app.agents.visual_tools import build_diagram
 from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
 from app.services.llm_service import llm_service
@@ -49,6 +50,8 @@ class LaidOutNode(BaseModel):
     w: float
     h: float
     shape: Literal["rect", "circle"] = "rect"
+    icon: Optional[dict] = None
+    type: Optional[str] = None
 
 
 class LaidOutEdge(BaseModel):
@@ -57,11 +60,13 @@ class LaidOutEdge(BaseModel):
     label: Optional[str] = None
     points: List[Tuple[float, float]]
     marker: Literal["arrow", "none"] = "arrow"
+    style: Optional[str] = None
 
 
 class DiagramData(BaseModel):
     title: str = ""
     layout_type: str
+    theme: str = "developer-dark"
     viewbox: Dict[str, float]
     nodes: List[LaidOutNode]
     edges: List[LaidOutEdge]
@@ -185,6 +190,28 @@ def _parse_sections(raw_sections: list, concept: str) -> List[Section]:
     return sections or [TextSection(type="text", body="No content was generated. Please try again.")]
 
 
+def _add_default_diagrams(sections: List[Section], concept: str) -> List[Section]:
+    if any(getattr(section, "type", None) == "image" for section in sections):
+        return sections
+
+    out: List[Section] = []
+    text_seen = 0
+    for section in sections:
+        out.append(section)
+        if section.type != "text":
+            continue
+        text_seen += 1
+        if text_seen in {1, 3}:
+            diagram_text = f"{section.heading or concept}\n\n{section.body}"
+            diagram = DiagramData.model_validate(build_diagram(diagram_text).model_dump())
+            out.append(ImageSection(
+                type="image",
+                caption=f"Auto-generated visual map for {section.heading or concept}",
+                diagram=diagram,
+            ))
+    return out
+
+
 def _fallback_article_data(concept: str, rag_results: List[dict]) -> dict:
     source_hint = ""
     references = []
@@ -274,7 +301,10 @@ def visual_explain(
         data = _fallback_article_data(body.concept, rag_results)
 
     # 3. Parse sections
-    sections = _parse_sections(data.get("sections", []), body.concept)
+    sections = _add_default_diagrams(
+        _parse_sections(data.get("sections", []), body.concept),
+        body.concept,
+    )
 
     # 4. Parse references
     references: List[Reference] = []
@@ -338,7 +368,10 @@ def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, No
     yield _sse("title", {"title": data.get("title", body.concept)})
 
     # 4. Emit sections one-by-one
-    sections = _parse_sections(data.get("sections", []), body.concept)
+    sections = _add_default_diagrams(
+        _parse_sections(data.get("sections", []), body.concept),
+        body.concept,
+    )
     for section in sections:
         yield _sse("section", section.model_dump())
 
@@ -398,26 +431,5 @@ def quick_diagram(
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="text must not be empty.")
-    try:
-        raw = llm_service.generate_diagram_from_selection(text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM error: {e}")
-    try:
-        data = llm_service.parse_json_response(raw)
-    except (json.JSONDecodeError, ValueError):
-        data = {
-            "title": text[:28] or "Concept Map",
-            "intent": "sequential",
-            "nodes": [
-                {"id": "n1", "label": "Start State", "color": "#06b6d4"},
-                {"id": "n2", "label": "Input Event", "color": "#8b5cf6"},
-                {"id": "n3", "label": "Transition", "color": "#10b981"},
-                {"id": "n4", "label": "Next State", "color": "#f59e0b"},
-            ],
-            "edges": [
-                {"source": "n1", "target": "n2", "label": "receives"},
-                {"source": "n2", "target": "n3", "label": "triggers"},
-                {"source": "n3", "target": "n4", "label": "moves"},
-            ],
-        }
-    return QuickDiagramResponse(diagram=_parse_diagram(data, text[:25]))
+    diagram = build_diagram(text)
+    return QuickDiagramResponse(diagram=DiagramData.model_validate(diagram.model_dump()))
