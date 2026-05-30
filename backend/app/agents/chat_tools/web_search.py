@@ -1,31 +1,21 @@
-import re
 from typing import Dict, List, Tuple
 
-import requests
 try:
     from duckduckgo_search import DDGS
 except ImportError:
     DDGS = None
 
-from app.core.config import settings
+from app.agents.chat_tools.query_planner import plan_query
 from app.services.llm_service import llm_service
 
 
-def _clean_query(query: str) -> str:
-    clean = query.strip()
-    clean = re.sub(r"^(can you|could you|please|search|find|look up|google)\s+", "", clean, flags=re.I)
-    clean = re.sub(r"^(find|search|look up)\s+(anything\s+)?(about|on|for)\s+", "", clean, flags=re.I)
-    clean = re.sub(r"\s+", " ", clean)
-    return clean[:400] or query.strip()[:400]
-
-
-def _duckduckgo_search(query: str) -> Tuple[List[Dict[str, str]], str | None]:
+def _duckduckgo_search(search_query: str) -> Tuple[List[Dict[str, str]], str | None]:
     if DDGS is None:
         return [], "duckduckgo_search is not installed. Run pip install -r requirements.txt."
 
     try:
         with DDGS() as ddgs:
-            raw_results = ddgs.text(_clean_query(query), max_results=5)
+            raw_results = ddgs.text(search_query, max_results=5)
             results = [
                 {
                     "title": item.get("title", ""),
@@ -41,51 +31,16 @@ def _duckduckgo_search(query: str) -> Tuple[List[Dict[str, str]], str | None]:
     return results, None
 
 
-def _brave_search(query: str) -> Tuple[List[Dict[str, str]], str | None]:
-    if not settings.BRAVE_SEARCH_API_KEY:
-        return [], "BRAVE_SEARCH_API_KEY is not configured."
-
-    try:
-        response = requests.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            headers={
-                "Accept": "application/json",
-                "X-Subscription-Token": settings.BRAVE_SEARCH_API_KEY,
-            },
-            params={
-                "q": _clean_query(query),
-                "count": 5,
-                "country": "us",
-                "search_lang": "en",
-                "safesearch": "moderate",
-            },
-            timeout=settings.WEB_SEARCH_TIMEOUT,
-        )
-    except requests.RequestException as exc:
-        return [], f"Search request failed: {exc}"
-
-    if response.status_code >= 400:
-        detail = response.text[:500] if response.text else response.reason
-        return [], f"Brave Search returned {response.status_code}: {detail}"
-
-    data = response.json()
-    return [
-        {
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("description", ""),
-        }
-        for item in data.get("web", {}).get("results", [])
-    ], None
-
-
 def search_web(*, query: str, history: List[Dict[str, str]]) -> Dict[str, object]:
     provider = "DuckDuckGo"
-    results, error = _duckduckgo_search(query)
-    if not results and settings.BRAVE_SEARCH_API_KEY:
-        provider = "Brave Search"
-        results, error = _brave_search(query)
-
+    planned = plan_query(
+        target="web_search",
+        message=query,
+        history=history,
+        topic=None,
+    )
+    search_query = planned["query"]
+    results, error = _duckduckgo_search(search_query)
     if not results:
         message = (
             f"I could not complete the live web search. {error}"
@@ -100,9 +55,10 @@ def search_web(*, query: str, history: List[Dict[str, str]]) -> Dict[str, object
                     "title": "Web search unavailable" if error else "No web results",
                     "data": {
                         "query": query,
-                        "clean_query": _clean_query(query),
-                        "provider": provider,
-                        "configured": True,
+                        "search_query": search_query,
+                        "query_reason": planned["reason"],
+                        "provider": "DuckDuckGo",
+                        "configured": DDGS is not None,
                         "error": error,
                     },
                 }
@@ -112,7 +68,13 @@ def search_web(*, query: str, history: List[Dict[str, str]]) -> Dict[str, object
             "action": {
                 "tool": "web_search",
                 "input": query,
-                "output": {"results": 0, "provider": provider, "error": error},
+                "output": {
+                    "results": 0,
+                    "provider": "DuckDuckGo",
+                    "search_query": search_query,
+                    "query_reason": planned["reason"],
+                    "error": error,
+                },
             },
         }
 
@@ -125,7 +87,11 @@ def search_web(*, query: str, history: List[Dict[str, str]]) -> Dict[str, object
             "You are CognifyAI, a study assistant summarizing web search results. "
             "Answer the user clearly and cite result numbers like [1]."
         ),
-        user_prompt=f"USER REQUEST:\n{query}\n\nWEB RESULTS:\n{search_context}",
+        user_prompt=(
+            f"USER REQUEST:\n{query}\n\n"
+            f"SEARCH QUERY USED:\n{search_query}\n\n"
+            f"WEB RESULTS:\n{search_context}"
+        ),
         temperature=0.4,
         max_tokens=900,
         history=history,
@@ -141,6 +107,11 @@ def search_web(*, query: str, history: List[Dict[str, str]]) -> Dict[str, object
         "action": {
             "tool": "web_search",
             "input": query,
-            "output": {"results": len(results), "provider": provider},
+            "output": {
+                "results": len(results),
+                "provider": provider,
+                "search_query": search_query,
+                "query_reason": planned["reason"],
+            },
         },
     }

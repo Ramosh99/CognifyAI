@@ -92,6 +92,7 @@ class AgentService:
         result = chat_tools.retrieve_documents(
             message=state["message"],
             user_id=state["user_id"],
+            history=state.get("history", []),
             intent=state["intent"],
             topic=state.get("topic"),
             top_k=state.get("top_k", 6),

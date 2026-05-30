@@ -18,6 +18,35 @@ type Message = {
   loading?: boolean;
 };
 
+function historyContent(message: Message): string {
+  const parts = [message.content];
+  for (const block of message.blocks || []) {
+    if (block.type === "text") {
+      parts.push(block.text);
+    } else if (block.type === "web_results") {
+      parts.push(
+        block.results
+          .map((result, index) => `Web result ${index + 1}: ${result.title} ${result.url} ${result.snippet}`)
+          .join("\n")
+      );
+    } else if (block.type === "quiz") {
+      parts.push(block.questions.map((q, index) => `Quiz ${index + 1}: ${q.question}`).join("\n"));
+    } else if (block.type === "diagram") {
+      parts.push(`Diagram: ${block.diagram.title} ${block.diagram.nodes.map((n) => n.label).join(", ")}`);
+    } else if (block.type === "tool_result") {
+      parts.push(`${block.title}: ${JSON.stringify(block.data)}`);
+    }
+  }
+  if (message.sources?.length) {
+    parts.push(
+      message.sources
+        .map((source, index) => `Source ${index + 1}: ${source.topic || ""} ${source.source || ""} ${source.text}`)
+        .join("\n")
+    );
+  }
+  return parts.filter(Boolean).join("\n\n").slice(0, 3000);
+}
+
 function ToolBlock({ block }: { block: ChatBlock }) {
   if (block.type === "quiz") {
     return (
@@ -108,7 +137,7 @@ export default function ChatPage() {
     const history: ChatHistoryMessage[] = messages
       .filter((m) => !m.loading && m.id !== 0)
       .slice(-10)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({ role: m.role, content: historyContent(m) }));
 
     try {
       await sendChatMessageStream(

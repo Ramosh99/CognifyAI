@@ -30,8 +30,8 @@ Available intents:
 - quiz: requests to generate quizzes, MCQs, tests, practice questions, or "test me" style prompts.
 - analyze: requests to analyze a wrong answer, misconception, mistake, or why an answer is incorrect.
 - visual: requests for diagrams, visual explanations, mind maps, flowcharts, concept maps, or visual structure.
-- web_search: requests to search the web, find current/latest information, or look up anything outside uploaded notes.
-- mcp_action: requests to use connected apps/tools such as calendar, YouTube, Drive, Docs, email, or other MCP connectors.
+- web_search: requests to search the web, find current/latest information, look up anything outside uploaded notes, or find public YouTube videos/resources.
+- mcp_action: requests to read or modify connected private apps/tools such as calendar, Drive, Docs, email, or other MCP connectors.
 - multi_tool: requests that clearly require more than one tool, such as finding web/YouTube material and then making a study plan.
 
 Routing rules:
@@ -40,6 +40,7 @@ Routing rules:
 - If wrong_answer or correct_answer is supplied, prefer analyze.
 - If the message asks for both explanation and quiz, choose quiz when assessment/practice is the final requested action.
 - If the message asks for visual output or diagrammatic explanation, choose visual.
+- If the user asks to find YouTube videos, choose web_search unless they ask to use a private YouTube account action.
 - When unsure between normal and study, choose study if the user appears to ask about a subject or concept.
 
 Output ONLY valid JSON with this schema:
@@ -63,9 +64,9 @@ def _fallback_route(
         return {"intent": "quiz", "reason": "message asks for practice questions"}
     if any(term in text for term in ("diagram", "visual", "mind map", "flowchart")):
         return {"intent": "visual", "reason": "message asks for visual output"}
-    if any(term in text for term in ("search", "google", "web", "latest", "current")):
+    if any(term in text for term in ("search", "google", "web", "latest", "current", "youtube", "video")):
         return {"intent": "web_search", "reason": "message asks for web lookup"}
-    if any(term in text for term in ("calendar", "youtube", "google drive", "docs", "gmail")):
+    if any(term in text for term in ("calendar", "google drive", "docs", "gmail")):
         return {"intent": "mcp_action", "reason": "message mentions a connected app"}
     if topic or len(text.split()) >= 5:
         return {"intent": "study", "reason": "message appears to be a study question"}
