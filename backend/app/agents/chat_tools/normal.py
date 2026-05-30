@@ -14,6 +14,7 @@ def answer_normal_message(
     )
     return {
         "response": response,
+        "blocks": [{"type": "text", "text": response}],
         "sources": [],
         "quiz": None,
         "feedback": None,

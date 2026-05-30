@@ -1,14 +1,79 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessageStream, ChatHistoryMessage, ChatSource } from "@/lib/api";
+import {
+  sendChatMessageStream,
+  ChatBlock,
+  ChatHistoryMessage,
+  ChatSource,
+} from "@/lib/api";
+import DiagramRenderer from "@/components/DiagramRenderer";
 
 type Message = {
   id: number;
   role: "user" | "assistant";
   content: string;
   sources?: ChatSource[];
+  blocks?: ChatBlock[];
+  intent?: string;
   loading?: boolean;
 };
+
+function ToolBlock({ block }: { block: ChatBlock }) {
+  if (block.type === "quiz") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+        {block.questions.map((q, i) => (
+          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.7rem", background: "var(--bg-base)" }}>
+            <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>{i + 1}. {q.question}</div>
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              {q.options.map((option) => (
+                <div key={option.key} style={{ color: option.key === q.correct_key ? "var(--accent-success)" : "var(--text-secondary)" }}>
+                  <strong>{option.key}.</strong> {option.text}
+                </div>
+              ))}
+            </div>
+            {q.explanation && <p style={{ marginTop: "0.5rem", color: "var(--text-muted)" }}>{q.explanation}</p>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "web_results") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+        {block.results.map((result, i) => (
+          <a key={i} href={result.url} target="_blank" rel="noreferrer" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.65rem", background: "var(--bg-base)", color: "inherit", textDecoration: "none" }}>
+            <div style={{ fontWeight: 700 }}>{result.title}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", overflowWrap: "anywhere" }}>{result.url}</div>
+            <p style={{ marginTop: "0.35rem", color: "var(--text-secondary)" }}>{result.snippet}</p>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "diagram") {
+    return (
+      <div style={{ width: "100%", aspectRatio: "16 / 9", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", background: "var(--diagram-bg)" }}>
+        <DiagramRenderer data={block.diagram} />
+      </div>
+    );
+  }
+
+  if (block.type === "tool_result") {
+    return (
+      <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.65rem", background: "var(--bg-base)" }}>
+        <div style={{ fontWeight: 700, marginBottom: "0.35rem" }}>{block.title}</div>
+        <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "var(--text-muted)", fontSize: "0.72rem" }}>
+          {JSON.stringify(block.data, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function ChatPage() {
   const [messages, setMessages]   = useState<Message[]>([
@@ -52,6 +117,20 @@ export default function ChatPage() {
           onSources: (sources) => {
             setMessages((prev) =>
               prev.map((m) => (m.id === thinkingMsg.id ? { ...m, sources } : m))
+            );
+          },
+          onIntent: (intent) => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === thinkingMsg.id ? { ...m, intent } : m))
+            );
+          },
+          onBlock: (block) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id
+                  ? { ...m, blocks: [...(m.blocks || []), block], loading: false }
+                  : m
+              )
             );
           },
           onStatus: (status) => {
@@ -131,7 +210,7 @@ export default function ChatPage() {
         <div>
           <h1>Chat</h1>
           <p style={{ marginTop: "0.15rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Answers grounded in your uploaded knowledge base
+            Study chat with notes, tools, web search, and visual outputs
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
@@ -214,6 +293,14 @@ export default function ChatPage() {
                   msg.content
                 )}
               </div>
+
+              {!msg.loading && msg.blocks && msg.blocks.filter((b) => b.type !== "text").length > 0 && (
+                <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {msg.blocks.filter((b) => b.type !== "text").map((block, i) => (
+                    <ToolBlock key={i} block={block} />
+                  ))}
+                </div>
+              )}
 
               {/* Sources toggle */}
               {!msg.loading && msg.sources && msg.sources.length > 0 && (

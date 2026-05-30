@@ -1,6 +1,6 @@
 import json
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,8 +8,6 @@ from starlette.responses import StreamingResponse
 
 from app.core.auth import get_current_user_id
 from app.services.agent_service import agent_service
-from app.services.llm_service import llm_service
-from app.services.rag_service import rag_service
 
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -37,6 +35,9 @@ class ChatSource(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     sources: List[ChatSource]
+    blocks: List[Dict[str, Any]] = []
+    intent: str = "normal"
+    actions: List[Dict[str, Any]] = []
 
 
 def _history(body: ChatRequest) -> List[dict]:
@@ -64,46 +65,24 @@ def chat_message(
 
     history = _history(body)
 
-    if agent_service.is_normal_message(body.message, body.topic):
-        try:
-            reply = llm_service.general_chat(message=body.message, history=history)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"LLM error: {e}") from e
-        return ChatResponse(response=reply, sources=[])
-
-    rag_results = rag_service.retrieve(
-        query=body.message,
-        user_id=user_id,
-        top_k=body.top_k,
-        filter_topic=body.topic or None,
-    )
-    context_chunks = [r["text"] for r in rag_results]
-
     try:
-        if context_chunks:
-            reply = llm_service.chat(
-                context_chunks=context_chunks,
-                message=body.message,
-                history=history,
-            )
-        else:
-            reply = llm_service.general_study_chat(
-                message=body.message,
-                history=history,
-            )
+        result = agent_service.run(
+            message=body.message,
+            user_id=user_id,
+            history=history,
+            topic=body.topic,
+            top_k=body.top_k,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {e}") from e
 
-    sources = [
-        ChatSource(
-            text=r["text"],
-            score=r["score"],
-            topic=r.get("topic"),
-            source=r.get("source"),
-        )
-        for r in rag_results
-    ]
-    return ChatResponse(response=reply, sources=sources)
+    return ChatResponse(
+        response=result.get("response", ""),
+        sources=[ChatSource(**source) for source in result.get("sources", [])],
+        blocks=result.get("blocks", []),
+        intent=result.get("intent", "normal"),
+        actions=result.get("actions", []),
+    )
 
 
 @router.post("/message/stream")
@@ -118,52 +97,24 @@ def chat_message_stream(
 
     def event_stream():
         try:
-            if agent_service.is_normal_message(body.message, body.topic):
-                yield f"event: status\ndata: {json.dumps({'message': 'Thinking...'})}\n\n"
-                yield f"event: sources\ndata: {json.dumps([])}\n\n"
-                yield from _emit_tokens(
-                    llm_service.stream_general_chat(
-                        message=body.message,
-                        history=history,
-                    )
-                )
-                yield "event: done\ndata: {}\n\n"
-                return
-
-            yield f"event: status\ndata: {json.dumps({'message': 'Searching your documents...'})}\n\n"
-
-            rag_results = rag_service.retrieve(
-                query=body.message,
+            yield f"event: status\ndata: {json.dumps({'message': 'Thinking...'})}\n\n"
+            result = agent_service.run(
+                message=body.message,
                 user_id=user_id,
+                history=history,
+                topic=body.topic,
                 top_k=body.top_k,
-                filter_topic=body.topic or None,
             )
-            context_chunks = [r["text"] for r in rag_results]
-            sources = [
-                ChatSource(
-                    text=r["text"],
-                    score=r["score"],
-                    topic=r.get("topic"),
-                    source=r.get("source"),
-                ).model_dump()
-                for r in rag_results
-            ]
 
+            sources = result.get("sources", [])
+            yield f"event: intent\ndata: {json.dumps({'intent': result.get('intent', 'normal')})}\n\n"
+            yield f"event: actions\ndata: {json.dumps(result.get('actions', []))}\n\n"
             yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
-            yield f"event: status\ndata: {json.dumps({'message': 'Generating answer...'})}\n\n"
-
-            if context_chunks:
-                chunks = llm_service.stream_chat(
-                    context_chunks=context_chunks,
-                    message=body.message,
-                    history=history,
-                )
-            else:
-                chunks = llm_service.stream_general_study_chat(
-                    message=body.message,
-                    history=history,
-                )
-            yield from _emit_tokens(chunks)
+            for block in result.get("blocks", []):
+                if block.get("type") == "text":
+                    yield from _emit_tokens([block.get("text", "")])
+                else:
+                    yield f"event: block\ndata: {json.dumps(block)}\n\n"
             yield "event: done\ndata: {}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"

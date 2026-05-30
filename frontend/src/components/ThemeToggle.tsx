@@ -2,14 +2,11 @@
 import { useEffect, useState } from "react";
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<string>("dark");
-
-  useEffect(() => {
+  const [theme, setTheme] = useState<string>(() => {
+    if (typeof window === "undefined") return "dark";
     const stored = localStorage.getItem("theme");
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
-    }
-  }, []);
+    return stored === "light" || stored === "dark" ? stored : "dark";
+  });
 
   const toggle = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -17,6 +14,10 @@ export default function ThemeToggle() {
     localStorage.setItem("theme", next);
     document.documentElement.setAttribute("data-theme", next);
   };
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   return (
     <button onClick={toggle} className="theme-toggle cursor-pointer font-medium">

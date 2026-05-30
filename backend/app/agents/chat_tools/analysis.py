@@ -13,6 +13,12 @@ def analyze_misconception(
     if not wrong_answer or not correct_answer:
         return {
             "response": "Send the question, your wrong answer, and the correct answer so I can analyze the misconception.",
+            "blocks": [
+                {
+                    "type": "text",
+                    "text": "Send the question, your wrong answer, and the correct answer so I can analyze the misconception.",
+                }
+            ],
             "quiz": None,
             "feedback": None,
             "action": None,
@@ -26,6 +32,7 @@ def analyze_misconception(
     )
     return {
         "response": feedback,
+        "blocks": [{"type": "text", "text": feedback}],
         "quiz": None,
         "feedback": feedback,
         "action": {

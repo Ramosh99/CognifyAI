@@ -9,7 +9,16 @@ except ImportError:  # Lets the app still import before requirements are install
     StateGraph = None
 
 
-Intent = Literal["normal", "study", "quiz", "analyze", "visual"]
+Intent = Literal[
+    "normal",
+    "study",
+    "quiz",
+    "analyze",
+    "visual",
+    "web_search",
+    "mcp_action",
+    "multi_tool",
+]
 
 
 class AgentState(TypedDict, total=False):
@@ -27,6 +36,7 @@ class AgentState(TypedDict, total=False):
     sources: List[Dict[str, Any]]
     context_chunks: List[str]
     response: str
+    blocks: List[Dict[str, Any]]
     quiz: Optional[List[Dict[str, Any]]]
     feedback: Optional[str]
 
@@ -105,6 +115,7 @@ class AgentService:
         return {
             **state,
             "response": result["response"],
+            "blocks": result["blocks"],
             "quiz": result["quiz"],
             "feedback": result["feedback"],
             "actions": [
@@ -124,6 +135,7 @@ class AgentService:
         return {
             **state,
             "response": result["response"],
+            "blocks": result["blocks"],
             "quiz": result["quiz"],
             "feedback": result["feedback"],
             "actions": [
@@ -145,6 +157,7 @@ class AgentService:
         return {
             **state,
             "response": result["response"],
+            "blocks": result["blocks"],
             "quiz": result["quiz"],
             "feedback": result["feedback"],
             "actions": actions,
@@ -159,6 +172,7 @@ class AgentService:
         return {
             **state,
             "response": result["response"],
+            "blocks": result["blocks"],
             "quiz": result["quiz"],
             "feedback": result["feedback"],
             "actions": [
@@ -167,9 +181,59 @@ class AgentService:
             ],
         }
 
+    def _web_search_node(self, state: AgentState) -> AgentState:
+        result = chat_tools.search_web(
+            query=state["message"],
+            history=state.get("history", []),
+        )
+        return {
+            **state,
+            "response": result["response"],
+            "blocks": result["blocks"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
+            "actions": [
+                *state.get("actions", []),
+                result["action"],
+            ],
+        }
+
+    def _mcp_action_node(self, state: AgentState) -> AgentState:
+        result = chat_tools.call_mcp_tool(message=state["message"])
+        return {
+            **state,
+            "response": result["response"],
+            "blocks": result["blocks"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
+            "actions": [
+                *state.get("actions", []),
+                result["action"],
+            ],
+        }
+
+    def _multi_tool_node(self, state: AgentState) -> AgentState:
+        search_result = chat_tools.search_web(
+            query=state["message"],
+            history=state.get("history", []),
+        )
+        return {
+            **state,
+            "response": search_result["response"],
+            "blocks": search_result["blocks"],
+            "quiz": search_result["quiz"],
+            "feedback": search_result["feedback"],
+            "actions": [
+                *state.get("actions", []),
+                search_result["action"],
+            ],
+        }
+
     def _next_after_route(self, state: AgentState) -> str:
         if state["intent"] == "normal":
             return "normal"
+        if state["intent"] in {"web_search", "mcp_action", "multi_tool"}:
+            return state["intent"]
         return "retrieve"
 
     def _next_after_retrieve(self, state: AgentState) -> str:
@@ -183,6 +247,7 @@ class AgentService:
         return {
             **state,
             "response": result["response"],
+            "blocks": result["blocks"],
             "sources": result["sources"],
             "quiz": result["quiz"],
             "feedback": result["feedback"],
@@ -201,12 +266,21 @@ class AgentService:
         graph.add_node("quiz_node", self._quiz_node)
         graph.add_node("analyze_node", self._analyze_node)
         graph.add_node("visual_node", self._visual_node)
+        graph.add_node("web_search_node", self._web_search_node)
+        graph.add_node("mcp_action_node", self._mcp_action_node)
+        graph.add_node("multi_tool_node", self._multi_tool_node)
 
         graph.set_entry_point("route")
         graph.add_conditional_edges(
             "route",
             self._next_after_route,
-            {"normal": "normal_node", "retrieve": "retrieve"},
+            {
+                "normal": "normal_node",
+                "retrieve": "retrieve",
+                "web_search": "web_search_node",
+                "mcp_action": "mcp_action_node",
+                "multi_tool": "multi_tool_node",
+            },
         )
         graph.add_conditional_edges(
             "retrieve",
@@ -218,7 +292,16 @@ class AgentService:
                 "visual_node": "visual_node",
             },
         )
-        for node in ("normal_node", "study_node", "quiz_node", "analyze_node", "visual_node"):
+        for node in (
+            "normal_node",
+            "study_node",
+            "quiz_node",
+            "analyze_node",
+            "visual_node",
+            "web_search_node",
+            "mcp_action_node",
+            "multi_tool_node",
+        ):
             graph.add_edge(node, END)
         return graph.compile()
 
@@ -233,6 +316,12 @@ class AgentService:
             return self._analyze_node(state)
         if state["intent"] == "visual":
             return self._visual_node(state)
+        if state["intent"] == "web_search":
+            return self._web_search_node(state)
+        if state["intent"] == "mcp_action":
+            return self._mcp_action_node(state)
+        if state["intent"] == "multi_tool":
+            return self._multi_tool_node(state)
         return self._study_node(state)
 
     def run(
@@ -260,12 +349,14 @@ class AgentService:
             "actions": [],
             "sources": [],
             "context_chunks": [],
+            "blocks": [],
         }
         result = self.graph.invoke(state) if self.graph else self._fallback_run(state)
 
         return {
             "intent": result.get("intent", "normal"),
             "response": result.get("response", ""),
+            "blocks": result.get("blocks", []),
             "actions": result.get("actions", []),
             "sources": result.get("sources", []),
             "quiz": result.get("quiz"),

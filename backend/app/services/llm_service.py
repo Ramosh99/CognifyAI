@@ -349,7 +349,7 @@ class LLMService:
             system_prompt=prompts.VISUAL_ARTICLE_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.4,
-            max_tokens=1800,
+            max_tokens=4096,
             model=self.article_model,  # use high-context model
         )
 

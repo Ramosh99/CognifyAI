@@ -130,7 +130,7 @@ function SourcesPanel({ references }: { references: VisualReference[] }) {
                   </span>
                 </div>
                 <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", fontStyle: "italic", lineHeight: 1.5, margin: 0 }}>
-                  "{ref.excerpt.length > 130 ? ref.excerpt.slice(0, 130) + "…" : ref.excerpt}"
+                  &quot;{ref.excerpt.length > 130 ? ref.excerpt.slice(0, 130) + "..." : ref.excerpt}&quot;
                 </p>
               </div>
             </div>

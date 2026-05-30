@@ -170,7 +170,7 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
     {
       "type": "text",
       "heading": "Section heading (optional, omit for intro paragraph)",
-      "body": "Full paragraph(s). Write 80-180 words per section. Cite sources inline as [1], [2] etc."
+      "body": "Full paragraph. Write 70-120 words per section. Cite sources inline as [1], [2] etc. when sources exist."
     }
   ],
   "references": [
@@ -181,9 +181,10 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
 
 ARTICLE RULES:
 - ALL sections must be type "text" — do NOT include any "image" sections
-- Use 5-8 text sections totalling 700-1000 words
+- Use 4-6 text sections totalling 450-700 words
 - First section is the intro (no heading). Last section is a summary or conclusion.
-- Cite at least 3 different sources across the article using inline [N] notation
+- If sources are provided, cite up to 3 different sources across the article using inline [N] notation
+- If no source passages are provided, write from general knowledge and return an empty references array
 - excerpts in references: max 100 characters, verbatim from context
 - Write in clear, engaging prose — like a brilliant tutor explaining to a student
 - Adapt writing style for the learner type: Visual=use vivid analogies and spatial language,
@@ -199,7 +200,7 @@ def get_visual_article_user_prompt(context_with_numbers: str, concept: str, lear
 CONCEPT TO EXPLAIN: {concept}
 LEARNER STYLE: {learner_type}
 
-Write the full article JSON now. 700-1000 words of body text, all type "text" sections.
+Write the full article JSON now. 450-700 words of body text, all type "text" sections.
 Do NOT include any image sections. Output ONLY valid JSON — no markdown wrapping.
 """
 

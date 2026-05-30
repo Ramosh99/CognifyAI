@@ -3,7 +3,16 @@ from typing import Dict, List, Literal, Optional, TypedDict
 from app.services.llm_service import llm_service
 
 
-Intent = Literal["normal", "study", "quiz", "analyze", "visual"]
+Intent = Literal[
+    "normal",
+    "study",
+    "quiz",
+    "analyze",
+    "visual",
+    "web_search",
+    "mcp_action",
+    "multi_tool",
+]
 
 
 class RouteResult(TypedDict):
@@ -21,6 +30,9 @@ Available intents:
 - quiz: requests to generate quizzes, MCQs, tests, practice questions, or "test me" style prompts.
 - analyze: requests to analyze a wrong answer, misconception, mistake, or why an answer is incorrect.
 - visual: requests for diagrams, visual explanations, mind maps, flowcharts, concept maps, or visual structure.
+- web_search: requests to search the web, find current/latest information, or look up anything outside uploaded notes.
+- mcp_action: requests to use connected apps/tools such as calendar, YouTube, Drive, Docs, email, or other MCP connectors.
+- multi_tool: requests that clearly require more than one tool, such as finding web/YouTube material and then making a study plan.
 
 Routing rules:
 - Pick exactly one intent.
@@ -31,7 +43,7 @@ Routing rules:
 - When unsure between normal and study, choose study if the user appears to ask about a subject or concept.
 
 Output ONLY valid JSON with this schema:
-{"intent":"normal|study|quiz|analyze|visual","reason":"short reason"}
+{"intent":"normal|study|quiz|analyze|visual|web_search|mcp_action|multi_tool","reason":"short reason"}
 """
 
 
@@ -51,6 +63,10 @@ def _fallback_route(
         return {"intent": "quiz", "reason": "message asks for practice questions"}
     if any(term in text for term in ("diagram", "visual", "mind map", "flowchart")):
         return {"intent": "visual", "reason": "message asks for visual output"}
+    if any(term in text for term in ("search", "google", "web", "latest", "current")):
+        return {"intent": "web_search", "reason": "message asks for web lookup"}
+    if any(term in text for term in ("calendar", "youtube", "google drive", "docs", "gmail")):
+        return {"intent": "mcp_action", "reason": "message mentions a connected app"}
     if topic or len(text.split()) >= 5:
         return {"intent": "study", "reason": "message appears to be a study question"}
     return {"intent": "normal", "reason": "fallback normal route"}
@@ -94,7 +110,16 @@ Return the route JSON now."""
         )
         data = llm_service.parse_json_response(raw)
         intent = data.get("intent")
-        if intent in {"normal", "study", "quiz", "analyze", "visual"}:
+        if intent in {
+            "normal",
+            "study",
+            "quiz",
+            "analyze",
+            "visual",
+            "web_search",
+            "mcp_action",
+            "multi_tool",
+        }:
             return {
                 "intent": intent,
                 "reason": str(data.get("reason") or "model route"),

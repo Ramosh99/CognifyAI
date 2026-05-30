@@ -25,6 +25,7 @@ def answer_study_question(
 
     return {
         "response": response,
+        "blocks": [{"type": "text", "text": response}],
         "quiz": None,
         "feedback": None,
         "action": {"tool": tool, "input": message, "output": "response"},

@@ -30,6 +30,10 @@ def generate_quiz(
 
     return {
         "response": response,
+        "blocks": [
+            {"type": "text", "text": response},
+            {"type": "quiz", "questions": questions},
+        ],
         "quiz": questions,
         "feedback": None,
         "action": {

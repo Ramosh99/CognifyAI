@@ -42,6 +42,7 @@ class AgentSource(BaseModel):
 class AgentMessageResponse(BaseModel):
     intent: str
     response: str
+    blocks: List[Dict[str, Any]] = []
     actions: List[AgentAction]
     sources: List[AgentSource]
     quiz: Optional[List[Dict[str, Any]]] = None

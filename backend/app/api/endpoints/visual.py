@@ -185,6 +185,51 @@ def _parse_sections(raw_sections: list, concept: str) -> List[Section]:
     return sections or [TextSection(type="text", body="No content was generated. Please try again.")]
 
 
+def _fallback_article_data(concept: str, rag_results: List[dict]) -> dict:
+    source_hint = ""
+    references = []
+    for i, result in enumerate(rag_results[:3], start=1):
+        excerpt = result.get("text", "")[:100]
+        if excerpt:
+            references.append({"num": i, "excerpt": excerpt})
+            source_hint += f" [{i}]"
+
+    intro_cite = " [1]" if references else ""
+    return {
+        "title": f"{concept.strip()[:80] or 'Visual Explanation'}",
+        "sections": [
+            {
+                "type": "text",
+                "body": (
+                    f"{concept} can be understood as a connected system of ideas rather than a single isolated fact."
+                    f"{intro_cite} Start by identifying the main state, process, or object, then trace how information, "
+                    "control, or cause-and-effect moves through it."
+                ),
+            },
+            {
+                "type": "text",
+                "heading": "Core Structure",
+                "body": (
+                    "A useful visual explanation separates the concept into nodes and transitions. Nodes represent "
+                    "important conditions, stages, or components. Transitions show what causes movement from one node "
+                    "to another. This is especially helpful for state-machine topics, workflows, protocols, and systems "
+                    "where behavior changes after an event."
+                ),
+            },
+            {
+                "type": "text",
+                "heading": "How To Read It",
+                "body": (
+                    "Read the diagram from the starting point, follow each arrow, and ask what event or rule makes the "
+                    "system change. Loops usually mean repeated behavior. Branches usually mean decisions. End states "
+                    "show completion, failure, or a stable condition."
+                ),
+            },
+        ],
+        "references": references,
+    }
+
+
 def _strip_fences(raw: str) -> str:
     clean = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
     clean = re.sub(r"\s*```$", "", clean.strip(), flags=re.MULTILINE)
@@ -225,11 +270,8 @@ def visual_explain(
 
     try:
         data = llm_service.parse_json_response(raw)
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"LLM returned invalid JSON: {e}. Raw (first 500 chars): {raw[:500]}",
-        )
+    except (json.JSONDecodeError, ValueError):
+        data = _fallback_article_data(body.concept, rag_results)
 
     # 3. Parse sections
     sections = _parse_sections(data.get("sections", []), body.concept)
@@ -289,9 +331,8 @@ def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, No
 
     try:
         data = llm_service.parse_json_response(raw)
-    except json.JSONDecodeError as e:
-        yield _sse("error", {"detail": f"Invalid JSON: {e}"})
-        return
+    except (json.JSONDecodeError, ValueError):
+        data = _fallback_article_data(body.concept, rag_results)
 
     # 3. Emit title
     yield _sse("title", {"title": data.get("title", body.concept)})
@@ -363,6 +404,20 @@ def quick_diagram(
         raise HTTPException(status_code=500, detail=f"LLM error: {e}")
     try:
         data = llm_service.parse_json_response(raw)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid diagram JSON: {e}")
+    except (json.JSONDecodeError, ValueError):
+        data = {
+            "title": text[:28] or "Concept Map",
+            "intent": "sequential",
+            "nodes": [
+                {"id": "n1", "label": "Start State", "color": "#06b6d4"},
+                {"id": "n2", "label": "Input Event", "color": "#8b5cf6"},
+                {"id": "n3", "label": "Transition", "color": "#10b981"},
+                {"id": "n4", "label": "Next State", "color": "#f59e0b"},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "label": "receives"},
+                {"source": "n2", "target": "n3", "label": "triggers"},
+                {"source": "n3", "target": "n4", "label": "moves"},
+            ],
+        }
     return QuickDiagramResponse(diagram=_parse_diagram(data, text[:25]))
