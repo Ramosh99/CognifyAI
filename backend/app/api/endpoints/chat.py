@@ -80,11 +80,17 @@ def chat_message(
     context_chunks = [r["text"] for r in rag_results]
 
     try:
-        reply = llm_service.chat(
-            context_chunks=context_chunks,
-            message=body.message,
-            history=history,
-        )
+        if context_chunks:
+            reply = llm_service.chat(
+                context_chunks=context_chunks,
+                message=body.message,
+                history=history,
+            )
+        else:
+            reply = llm_service.general_study_chat(
+                message=body.message,
+                history=history,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {e}") from e
 
@@ -146,13 +152,18 @@ def chat_message_stream(
             yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
             yield f"event: status\ndata: {json.dumps({'message': 'Generating answer...'})}\n\n"
 
-            yield from _emit_tokens(
-                llm_service.stream_chat(
+            if context_chunks:
+                chunks = llm_service.stream_chat(
                     context_chunks=context_chunks,
                     message=body.message,
                     history=history,
                 )
-            )
+            else:
+                chunks = llm_service.stream_general_study_chat(
+                    message=body.message,
+                    history=history,
+                )
+            yield from _emit_tokens(chunks)
             yield "event: done\ndata: {}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"

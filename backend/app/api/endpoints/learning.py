@@ -48,28 +48,30 @@ def generate_quiz(
     if not body.topic.strip():
         raise HTTPException(status_code=400, detail="Topic is required.")
 
-    # Retrieve context — only this user's documents
+    # Retrieve context from this user's documents. Empty results fall back to a
+    # general tutor quiz instead of blocking the learner.
     rag_results = rag_service.retrieve(
         query=body.topic,
         user_id=user_id,
         top_k=10,
     )
 
-    if not rag_results:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No documents found for topic '{body.topic}'. Please upload your study materials first.",
-        )
-
     context_chunks = [res["text"] for res in rag_results]
 
     try:
-        questions_json = llm_service.generate_quiz(
-            context_chunks=context_chunks,
-            topic=body.topic,
-            learner_type=body.learner_type,
-            count=body.question_count,
-        )
+        if context_chunks:
+            questions_json = llm_service.generate_quiz(
+                context_chunks=context_chunks,
+                topic=body.topic,
+                learner_type=body.learner_type,
+                count=body.question_count,
+            )
+        else:
+            questions_json = llm_service.generate_general_quiz(
+                topic=body.topic,
+                learner_type=body.learner_type,
+                count=body.question_count,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate quiz: {e}")
 

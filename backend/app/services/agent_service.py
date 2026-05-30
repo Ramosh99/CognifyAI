@@ -1,7 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from app.services.llm_service import llm_service
-from app.services.rag_service import rag_service
+from app.agents import chat_tools
 
 try:
     from langgraph.graph import END, StateGraph
@@ -45,194 +44,126 @@ class AgentService:
         self.graph = self._build_graph() if StateGraph else None
 
     def _detect_intent(self, message: str, topic: Optional[str] = None) -> Intent:
-        text = message.lower().strip()
-
-        normal_terms = (
-            "hi",
-            "hello",
-            "hey",
-            "what can you do",
-            "what you can do",
-            "what are the agents",
-            "how do you work",
-            "help",
-            "who are you",
+        route = chat_tools.route_intent(
+            message=message,
+            history=[],
+            topic=topic,
+            wrong_answer=None,
+            correct_answer=None,
         )
-        quiz_terms = ("quiz", "mcq", "test me", "practice questions", "generate questions")
-        analyze_terms = (
-            "wrong answer",
-            "why is my answer wrong",
-            "misconception",
-            "analyze my answer",
-            "explain my mistake",
-        )
-        visual_terms = ("diagram", "visual", "mind map", "flowchart")
-        study_terms = (
-            "explain",
-            "summarize",
-            "compare",
-            "define",
-            "teach",
-            "from my document",
-            "from my notes",
-            "uploaded",
-        )
-
-        if text in {"hi", "hello", "hey"} or any(term in text for term in normal_terms):
-            return "normal"
-        if any(term in text for term in analyze_terms):
-            return "analyze"
-        if any(term in text for term in quiz_terms):
-            return "quiz"
-        if any(term in text for term in visual_terms):
-            return "visual"
-        if topic or any(term in text for term in study_terms) or len(text.split()) >= 5:
-            return "study"
-        return "normal"
+        return route["intent"]
 
     def is_normal_message(self, message: str, topic: Optional[str] = None) -> bool:
         return self._detect_intent(message, topic) == "normal"
 
-    def _source_payload(self, results: List[dict]) -> List[Dict[str, Any]]:
-        return [
-            {
-                "text": result.get("text", ""),
-                "score": result.get("score", 0.0),
-                "topic": result.get("topic"),
-                "source": result.get("source"),
-            }
-            for result in results
-        ]
-
     def _route_node(self, state: AgentState) -> AgentState:
-        intent = self._detect_intent(state["message"], state.get("topic"))
+        route = chat_tools.route_intent(
+            message=state["message"],
+            history=state.get("history", []),
+            topic=state.get("topic"),
+            wrong_answer=state.get("wrong_answer"),
+            correct_answer=state.get("correct_answer"),
+        )
+        intent = route["intent"]
         return {
             **state,
             "intent": intent,
             "actions": [
                 *state.get("actions", []),
-                {"tool": "langgraph_router", "input": state["message"], "output": intent},
+                {
+                    "tool": "llm_router",
+                    "input": state["message"],
+                    "output": {"intent": intent, "reason": route["reason"]},
+                },
             ],
         }
 
     def _retrieve_node(self, state: AgentState) -> AgentState:
-        query = state.get("topic") or state["message"]
-        top_k = 10 if state["intent"] == "quiz" else state.get("top_k", 6)
-        if state["intent"] == "analyze":
-            query = f"{state['message']} {state.get('topic') or ''}".strip()
-            top_k = 5
-
-        results = rag_service.retrieve(
-            query=query,
+        result = chat_tools.retrieve_documents(
+            message=state["message"],
             user_id=state["user_id"],
-            top_k=top_k,
-            filter_topic=state.get("topic") if state["intent"] == "study" else None,
+            intent=state["intent"],
+            topic=state.get("topic"),
+            top_k=state.get("top_k", 6),
         )
         return {
             **state,
-            "sources": self._source_payload(results),
-            "context_chunks": [result["text"] for result in results],
+            "sources": result["sources"],
+            "context_chunks": result["context_chunks"],
             "actions": [
                 *state.get("actions", []),
-                {
-                    "tool": "document_search",
-                    "input": query,
-                    "output": {"results": len(results)},
-                },
+                result["action"],
             ],
         }
 
     def _study_node(self, state: AgentState) -> AgentState:
-        response = llm_service.chat(
-            context_chunks=state.get("context_chunks", []),
+        result = chat_tools.answer_study_question(
             message=state["message"],
             history=state.get("history", []),
+            context_chunks=state.get("context_chunks", []),
         )
         return {
             **state,
-            "response": response,
-            "quiz": None,
-            "feedback": None,
+            "response": result["response"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
             "actions": [
                 *state.get("actions", []),
-                {"tool": "rag_tutor", "input": state["message"], "output": "response"},
+                result["action"],
             ],
         }
 
     def _quiz_node(self, state: AgentState) -> AgentState:
-        if not state.get("context_chunks"):
-            return {
-                **state,
-                "response": "I need uploaded study material for that topic before I can generate a grounded quiz.",
-                "quiz": None,
-                "feedback": None,
-            }
-
         topic = state.get("topic") or state["message"]
-        questions = llm_service.generate_quiz(
-            context_chunks=state["context_chunks"],
+        result = chat_tools.generate_quiz(
             topic=topic,
             learner_type=state.get("learner_type", "Textual"),
-            count=state.get("question_count", 3),
+            question_count=state.get("question_count", 3),
+            context_chunks=state.get("context_chunks", []),
         )
         return {
             **state,
-            "response": f"I generated {len(questions)} grounded practice questions.",
-            "quiz": questions,
-            "feedback": None,
+            "response": result["response"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
             "actions": [
                 *state.get("actions", []),
-                {
-                    "tool": "quiz_agent",
-                    "input": {"topic": topic, "question_count": state.get("question_count", 3)},
-                    "output": {"questions": len(questions)},
-                },
+                result["action"],
             ],
         }
 
     def _analyze_node(self, state: AgentState) -> AgentState:
-        if not state.get("wrong_answer") or not state.get("correct_answer"):
-            return {
-                **state,
-                "response": "Send the question, your wrong answer, and the correct answer so I can analyze the misconception.",
-                "quiz": None,
-                "feedback": None,
-            }
-
-        feedback = llm_service.analyze_misconception(
-            context_chunks=state.get("context_chunks", []),
-            question=state["message"],
-            wrong_answer=state["wrong_answer"] or "",
+        result = chat_tools.analyze_misconception(
+            message=state["message"],
+            wrong_answer=state.get("wrong_answer"),
             correct_answer=state["correct_answer"] or "",
+            context_chunks=state.get("context_chunks", []),
         )
+        actions = state.get("actions", [])
+        if result["action"]:
+            actions = [*actions, result["action"]]
         return {
             **state,
-            "response": feedback,
-            "quiz": None,
-            "feedback": feedback,
-            "actions": [
-                *state.get("actions", []),
-                {"tool": "misconception_agent", "input": "answer_pair", "output": "feedback"},
-            ],
+            "response": result["response"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
+            "actions": actions,
         }
 
     def _visual_node(self, state: AgentState) -> AgentState:
-        response = llm_service.chat(
-            context_chunks=state.get("context_chunks", []),
+        result = chat_tools.answer_visual_question(
             message=state["message"],
             history=state.get("history", []),
+            context_chunks=state.get("context_chunks", []),
         )
         return {
             **state,
-            "response": (
-                f"{response}\n\nI can also create a diagram from selected text with "
-                "`/api/v1/visual/diagram`."
-            ),
-            "quiz": None,
-            "feedback": None,
+            "response": result["response"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
             "actions": [
                 *state.get("actions", []),
-                {"tool": "visual_agent", "input": state["message"], "output": "visual_response"},
+                result["action"],
             ],
         }
 
@@ -245,19 +176,19 @@ class AgentService:
         return f"{state['intent']}_node"
 
     def _normal_node(self, state: AgentState) -> AgentState:
-        response = llm_service.general_chat(
+        result = chat_tools.answer_normal_message(
             message=state["message"],
             history=state.get("history", []),
         )
         return {
             **state,
-            "response": response,
-            "sources": [],
-            "quiz": None,
-            "feedback": None,
+            "response": result["response"],
+            "sources": result["sources"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
             "actions": [
                 *state.get("actions", []),
-                {"tool": "direct_chat", "input": state["message"], "output": "response"},
+                result["action"],
             ],
         }
 

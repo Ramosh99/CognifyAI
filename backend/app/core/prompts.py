@@ -49,6 +49,15 @@ CONTEXT:
 """
 
 
+def get_general_quiz_user_prompt(topic: str, learner_type: str = "Textual", count: int = 3) -> str:
+    return f"""
+Generate {count} Concept-Aware MCQs about '{topic}' using your general subject-matter knowledge.
+Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Practical, use real-world scenarios).
+
+Because no uploaded study material was available, avoid claiming the questions came from the user's documents.
+"""
+
+
 # ---------------------------------------------------------
 # 2. Misconception Analysis & Feedback
 # ---------------------------------------------------------
@@ -127,6 +136,23 @@ def get_general_chat_user_prompt(message: str) -> str:
 {message}
 
 Reply naturally."""
+
+
+GENERAL_STUDY_CHAT_SYSTEM_PROMPT = """
+You are CognifyAI, a friendly adaptive learning tutor.
+
+Answer study questions using reliable general knowledge when no uploaded document context is available.
+Be conversational, clear, and supportive. Keep answers concise but complete.
+Do not claim the answer is based on the user's documents or uploaded knowledge base.
+When helpful, mention that uploading material can make future answers more specific to their course notes.
+"""
+
+
+def get_general_study_chat_user_prompt(message: str) -> str:
+    return f"""USER STUDY QUESTION:
+{message}
+
+Answer as a tutor using general knowledge."""
 
 
 # ---------------------------------------------------------

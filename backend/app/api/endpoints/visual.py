@@ -224,7 +224,7 @@ def visual_explain(
         raise HTTPException(status_code=500, detail=f"LLM error: {e}")
 
     try:
-        data = json.loads(_strip_fences(raw))
+        data = llm_service.parse_json_response(raw)
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=500,
@@ -288,7 +288,7 @@ def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, No
         return
 
     try:
-        data = json.loads(_strip_fences(raw))
+        data = llm_service.parse_json_response(raw)
     except json.JSONDecodeError as e:
         yield _sse("error", {"detail": f"Invalid JSON: {e}"})
         return
@@ -362,7 +362,7 @@ def quick_diagram(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {e}")
     try:
-        data = json.loads(_strip_fences(raw))
+        data = llm_service.parse_json_response(raw)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"Invalid diagram JSON: {e}")
     return QuickDiagramResponse(diagram=_parse_diagram(data, text[:25]))
