@@ -260,8 +260,10 @@ ARTICLE RULES:
 - Write in a Wikipedia-style educational note: descriptive, precise, paragraph-based, and exam-ready.
 - Each section body should usually be 120-180 words, not a short summary.
 - First section is the intro and may omit heading. Last section should summarize or give a study takeaway.
-- If sources are provided, cite up to 3 different sources using inline [N] notation.
+- If source passages are provided, treat them as the primary research grounding and cite them inline using [N] notation.
+- If source passages are provided, do not ignore them and do not switch to an unrelated example domain.
 - If no source passages are provided, write from reliable general knowledge and return an empty references array.
+- For high-sensitivity domains such as health, law, finance, safety, or personal advice, use cautious educational wording and avoid diagnosis, legal advice, financial advice, or instructions that should come from a professional.
 - Output ONLY valid JSON. No markdown fences, no prose outside JSON.
 """
 
@@ -278,6 +280,7 @@ LEARNER STYLE:
 
 Compose the full Wikipedia-style note JSON now. Decide the note_type and visual_plan yourself.
 Do not produce a short overview. The note must have 5-7 substantial paragraphs and a visual plan for each major paragraph.
+Use the numbered source passages as research grounding when they exist.
 """
 
 

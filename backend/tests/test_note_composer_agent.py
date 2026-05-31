@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.agents.note_composer_agent import compose_note
+from app.agents.note_composer_agent import compose_note, compose_note_events
 
 
 def _fake_diagram():
@@ -92,3 +92,106 @@ def test_note_composer_fallback_is_substantial_and_visual_rich(monkeypatch):
     assert len(text_sections) >= 6
     assert len(visual_sections) >= len(text_sections)
     assert total_words >= 450
+
+
+def test_note_composer_fallback_does_not_leak_ai_ml_for_other_topics(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.llm_service.compose_note_article",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("llm unavailable")),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.build_diagram",
+        lambda text: _fake_diagram(),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.search_images",
+        lambda **kwargs: {"blocks": []},
+    )
+
+    note = compose_note(
+        concept="auditory hallucinations in medical science",
+        numbered_context="",
+        learner_type="Visual",
+        rag_results=[
+            {
+                "text": "Auditory hallucinations are perceptions of sound without an external acoustic stimulus.",
+                "score": 1.0,
+                "topic": "auditory hallucinations",
+                "source": "Wikipedia: Auditory hallucination",
+            }
+        ],
+    )
+    combined = " ".join(
+        section.body
+        for section in note.sections
+        if section.type == "text"
+    ).lower()
+
+    assert "auditory hallucinations" in combined
+    assert "machine learning" not in combined
+    assert "deep learning" not in combined
+
+
+def test_note_composer_events_include_realtime_statuses(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.llm_service.compose_note_article",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("llm unavailable")),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.build_diagram",
+        lambda text: _fake_diagram(),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.search_images",
+        lambda **kwargs: {"blocks": []},
+    )
+
+    events = list(compose_note_events(
+        concept="differences between AI and ML for advance exams",
+        numbered_context="",
+        learner_type="Visual",
+        rag_results=[],
+    ))
+    phases = [
+        event["data"]["phase"]
+        for event in events
+        if event["event"] == "status"
+    ]
+
+    assert "planning_note" in phases
+    assert "writing_article" in phases
+    assert "planning_visuals" in phases
+    assert "searching_images" in phases
+    assert "generating_diagram" in phases
+    assert "placing_visual" in phases
+    assert "finalizing_references" in phases
+    assert phases[-1] == "complete"
+
+
+def test_note_composer_events_report_image_fallback(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.llm_service.compose_note_article",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("llm unavailable")),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.build_diagram",
+        lambda text: _fake_diagram(),
+    )
+    monkeypatch.setattr(
+        "app.agents.note_composer_agent.search_images",
+        lambda **kwargs: {"blocks": []},
+    )
+
+    events = list(compose_note_events(
+        concept="differences between AI and ML for advance exams",
+        numbered_context="",
+        learner_type="Visual",
+        rag_results=[],
+    ))
+    fallback_messages = [
+        event["data"]["message"]
+        for event in events
+        if event["event"] == "status"
+    ]
+
+    assert "No suitable image found, generating a diagram instead..." in fallback_messages

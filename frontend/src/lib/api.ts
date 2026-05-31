@@ -276,6 +276,14 @@ export type VisualResponse = {
   references: VisualReference[];
 };
 
+export type VisualGenerationStatus = {
+  phase: string;
+  message: string;
+  detail?: string | null;
+  current?: number | null;
+  total?: number | null;
+};
+
 export const visualExplain = (body: {
   concept: string;
   learner_type?: string;
@@ -285,6 +293,7 @@ export const visualExplain = (body: {
 // ── Streaming visual explain (SSE) ────────────────────────────────────────────
 
 export type StreamCallbacks = {
+  onStatus?:    (status: VisualGenerationStatus) => void;
   onTitle:      (title: string | { title: string; note_type?: string | null }) => void;
   onSection:    (section: Section)           => void;
   onReferences: (refs: VisualReference[])    => void;
@@ -335,6 +344,7 @@ export async function visualExplainStream(
       const data  = JSON.parse(dataLine.slice("data:".length).trim());
 
       switch (event) {
+        case "status":     cbs.onStatus?.(data as VisualGenerationStatus); break;
         case "title":      cbs.onTitle(data);                  break;
         case "section":    cbs.onSection(data as Section);     break;
         case "references": cbs.onReferences(data.references);  break;

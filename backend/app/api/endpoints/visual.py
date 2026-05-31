@@ -10,7 +10,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, TypeAdapter
 from typing import Dict, List, Optional, Literal, Tuple, Union, Generator
 
-from app.agents.note_composer_agent import compose_note
+from app.agents.note_composer_agent import compose_note, compose_note_events
+from app.agents.research_note_graph import research_topic
 from app.agents.visual_tools import build_diagram
 from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
@@ -290,10 +291,16 @@ def _references_from_composer(composer_refs, rag_results: List[dict]) -> List[Re
             num=num,
             excerpt=(ref.excerpt or rag.get("text", ""))[:120],
             topic=rag.get("topic"),
-            source=rag.get("source"),
+            source=rag.get("url") or rag.get("source"),
             score=rag.get("score", 0.0),
         ))
     return references
+
+
+def _numbered_context(results: List[dict]) -> str:
+    return "\n\n".join(
+        f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(results) if r.get("text")
+    )
 
 
 # ── Endpoint ───────────────────────────────────────────────────────────────────
@@ -313,24 +320,23 @@ def visual_explain(
         top_k=body.top_k,
         filter_topic=body.topic or None,
     )
-    # Truncate each chunk to avoid oversized LLM requests.
-    numbered_context = "\n\n".join(
-        f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(rag_results)
-    )
+    research = research_topic(body.concept)
+    source_results = [*rag_results, *research["sources"]]
+    numbered_context = _numbered_context(source_results)
 
     # 2. Single LLM call → full article JSON
     note = compose_note(
         concept=body.concept,
         numbered_context=numbered_context,
         learner_type=body.learner_type,
-        rag_results=rag_results,
+        rag_results=source_results,
     )
 
     return VisualResponse(
         title=note.title,
         note_type=note.note_type,
         sections=[SectionAdapter.validate_python(section.model_dump()) for section in note.sections],
-        references=_references_from_composer(note.references, rag_results),
+        references=_references_from_composer(note.references, source_results),
     )
 
 
@@ -343,6 +349,11 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, None]:
+    yield _sse("status", {
+        "phase": "retrieving_sources",
+        "message": "Retrieving your source passages...",
+        "detail": body.topic or body.concept,
+    })
     """Generator that yields SSE events: title → section (one per chunk) → references → done."""
     # 1. RAG — scoped to this user
     rag_results = rag_service.retrieve(
@@ -351,27 +362,37 @@ def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, No
         top_k=body.top_k,
         filter_topic=body.topic or None,
     )
-    numbered_context = "\n\n".join(
-        f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(rag_results)
-    )
+    yield _sse("status", {
+        "phase": "classifying_topic",
+        "message": "Classifying topic domain and sensitivity...",
+        "detail": body.concept,
+    })
+    yield _sse("status", {
+        "phase": "researching_sources",
+        "message": "Researching public sources for this topic...",
+        "detail": "Wikipedia and web search",
+    })
+    research = research_topic(body.concept)
+    source_results = [*rag_results, *research["sources"]]
+    profile = research["profile"]
+    yield _sse("status", {
+        "phase": "researching_sources",
+        "message": f"Found {len(source_results)} source passage(s).",
+        "detail": f"{profile['topic_domain']} · {profile['sensitivity_level']} sensitivity",
+    })
+    numbered_context = _numbered_context(source_results)
 
-    note = compose_note(
+    for event in compose_note_events(
         concept=body.concept,
         numbered_context=numbered_context,
         learner_type=body.learner_type,
-        rag_results=rag_results,
-    )
-
-    # 3. Emit title
-    yield _sse("title", {"title": note.title, "note_type": note.note_type})
-
-    # 4. Emit sections one-by-one
-    for section in note.sections:
-        yield _sse("section", section.model_dump())
-
-    # 5. Emit references
-    references = _references_from_composer(note.references, rag_results)
-    yield _sse("references", {"references": [r.model_dump() for r in references]})
+        rag_results=source_results,
+    ):
+        if event["event"] == "references_raw":
+            references = _references_from_composer(event["data"], source_results)
+            yield _sse("references", {"references": [r.model_dump() for r in references]})
+        else:
+            yield _sse(event["event"], event["data"])
 
     # 6. Done
     yield _sse("done", {})

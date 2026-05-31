@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   visualExplainStream, generateDiagramFromSelection,
-  VisualReference, Section, TextSection, ImageSection,
+  VisualReference, Section, TextSection, ImageSection, VisualGenerationStatus,
 } from "@/lib/api";
 import DiagramRenderer from "@/components/DiagramRenderer";
 
@@ -10,6 +10,7 @@ type LearnerType = "Visual" | "Textual" | "Practical";
 type Tab = "concept" | "topic" | "style";
 type Popover = { text: string; sectionIndex: number; x: number; y: number };
 type ToastState = { msg: string; phase: "in" | "out" };
+type GenerationStep = VisualGenerationStatus & { id: number };
 
 // ── Inline citation renderer ──────────────────────────────────────────────────
 function CitedText({ text }: { text: string }) {
@@ -243,10 +244,59 @@ function SelectionPopover({
 }
 
 // ── Loading skeleton (shimmer) ────────────────────────────────────────────────
-function LoadingSkeleton({ elapsed }: { elapsed: number }) {
+function ProgressPanel({
+  elapsed,
+  status,
+  steps,
+  compact = false,
+}: {
+  elapsed: number;
+  status: VisualGenerationStatus | null;
+  steps: GenerationStep[];
+  compact?: boolean;
+}) {
+  const recentSteps = steps.slice(-5);
+  const progress = status?.current && status?.total ? ` ${status.current}/${status.total}` : "";
+  return (
+    <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: compact ? "0.5rem" : "0.8rem", marginBottom: compact ? "1.2rem" : "0.5rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        {status?.phase === "complete" ? (
+          <span className="badge" style={{ color: "var(--accent-success)" }}>done</span>
+        ) : (
+          <span className="spinner" />
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: compact ? "0.78rem" : "0.86rem", color: "var(--text-primary)", fontWeight: 600, lineHeight: 1.35 }}>
+            {status?.message || "Preparing visual note..."}{progress}
+          </div>
+          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.15rem", overflowWrap: "anywhere" }}>
+            {status?.detail || `Elapsed ${elapsed}s`}
+          </div>
+        </div>
+        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", flexShrink: 0 }}>{elapsed}s</span>
+      </div>
+      {recentSteps.length > 0 && (
+        <div style={{ display: "grid", gap: "0.35rem", paddingLeft: "1.55rem" }}>
+          {recentSteps.map((step, index) => {
+            const isLatest = index === recentSteps.length - 1 && status?.phase !== "complete";
+            return (
+              <div key={step.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: isLatest ? "var(--text-secondary)" : "var(--text-muted)", fontSize: "0.74rem", lineHeight: 1.35 }}>
+                <span style={{ width: "14px", color: isLatest ? "var(--accent-success)" : "var(--text-muted)" }}>{isLatest ? "..." : "✓"}</span>
+                <span>{step.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoadingSkeleton({ elapsed, status, steps }: { elapsed: number; status: VisualGenerationStatus | null; steps: GenerationStep[] }) {
   return (
     <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+      <ProgressPanel elapsed={elapsed} status={status} steps={steps} />
+      <div style={{ display: "none", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
         <span className="spinner" />
         <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
           Writing article from your documents… {elapsed}s
@@ -293,6 +343,8 @@ export default function VisualPage() {
   const [error, setError]             = useState("");
   const [activeTab, setActiveTab]     = useState<Tab>("concept");
   const [elapsed, setElapsed]         = useState(0);
+  const [generationStatus, setGenerationStatus] = useState<VisualGenerationStatus | null>(null);
+  const [generationSteps, setGenerationSteps] = useState<GenerationStep[]>([]);
   const [popover, setPopover]         = useState<Popover | null>(null);
   const [popoverLoading, setPopoverLoading] = useState(false);
   const [generatingAt, setGeneratingAt]    = useState<number | null>(null);
@@ -301,16 +353,15 @@ export default function VisualPage() {
   const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const articleRef = useRef<HTMLDivElement>(null);
 
-  // Elapsed timer while loading
+  // Elapsed timer while generation is active
   useEffect(() => {
-    if (loading) {
-      setElapsed(0);
+    if (loading || streaming) {
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [loading]);
+  }, [loading, streaming]);
 
   // Text selection listener
   useEffect(() => {
@@ -385,17 +436,24 @@ export default function VisualPage() {
   const generate = async () => {
     if (!concept.trim()) { setError("Please enter a concept."); return; }
     setLoading(true);
+    setElapsed(0);
     setError("");
     setTitle(null);
     setNoteType(null);
     setSections([]);
     setReferences([]);
     setStreaming(false);
+    setGenerationStatus(null);
+    setGenerationSteps([]);
 
     try {
       await visualExplainStream(
         { concept, learner_type: learnerType, topic: topic || undefined },
         {
+          onStatus: (status) => {
+            setGenerationStatus(status);
+            setGenerationSteps(prev => [...prev, { ...status, id: Date.now() + prev.length }]);
+          },
           onTitle: (payload) => {
             const titleData = typeof payload === "string" ? { title: payload, note_type: null } : payload;
             setTitle(titleData.title);
@@ -522,11 +580,14 @@ export default function VisualPage() {
       </div>
 
       {/* Loading skeleton */}
-      {loading && <LoadingSkeleton elapsed={elapsed} />}
+      {loading && <LoadingSkeleton elapsed={elapsed} status={generationStatus} steps={generationSteps} />}
 
       {/* Article — renders & grows as sections stream in */}
       {hasContent && (
         <div ref={articleRef} className="fade-up">
+          {streaming && (
+            <ProgressPanel elapsed={elapsed} status={generationStatus} steps={generationSteps} compact />
+          )}
           <div style={{ marginBottom: "2rem", paddingBottom: "1.5rem", borderBottom: "1px solid var(--border)" }}>
             <h1 style={{ fontSize: "1.9rem", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: "0.75rem", color: "var(--text-primary)", lineHeight: 1.25 }}>
               {title}
@@ -575,6 +636,7 @@ export default function VisualPage() {
                 onClick={() => {
                   setTitle(null); setSections([]); setReferences([]);
                   setNoteType(null);
+                  setGenerationStatus(null); setGenerationSteps([]);
                   setConcept(""); window.scrollTo({ top: 0, behavior: "smooth" });
                 }}>
                 ← Start New Research

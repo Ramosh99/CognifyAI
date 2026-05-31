@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Generator, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -45,6 +45,30 @@ class ComposedNote(BaseModel):
     references: List[ComposerReference]
 
 
+ComposerEvent = Dict[str, Any]
+
+
+def _status(
+    phase: str,
+    message: str,
+    *,
+    detail: Optional[str] = None,
+    current: Optional[int] = None,
+    total: Optional[int] = None,
+) -> ComposerEvent:
+    data: Dict[str, Any] = {
+        "phase": phase,
+        "message": message,
+    }
+    if detail is not None:
+        data["detail"] = detail
+    if current is not None:
+        data["current"] = current
+    if total is not None:
+        data["total"] = total
+    return {"event": "status", "data": data}
+
+
 def _fallback_note_data(concept: str, rag_results: List[dict]) -> Dict[str, Any]:
     references = []
     for i, result in enumerate(rag_results[:3], start=1):
@@ -53,6 +77,12 @@ def _fallback_note_data(concept: str, rag_results: List[dict]) -> Dict[str, Any]
             references.append({"num": i, "excerpt": excerpt})
 
     cite = " [1]" if references else ""
+    source_summary = " ".join(str(result.get("text", ""))[:260] for result in rag_results[:2]).strip()
+    grounding = (
+        f" Available source context describes: {source_summary[:360]}."
+        if source_summary
+        else ""
+    )
     return {
         "title": concept.strip()[:80] or "Study Note",
         "note_type": "conceptual_explainer",
@@ -60,69 +90,67 @@ def _fallback_note_data(concept: str, rag_results: List[dict]) -> Dict[str, Any]
             {
                 "type": "text",
                 "body": (
-                    f"{concept} should be studied as an exam-style explanatory note, not as a short definition.{cite} "
-                    "Start by identifying the scope of each term, then compare how the ideas relate, where they overlap, "
-                    "and where they differ. A strong answer usually defines the broad concept first, explains the narrower "
-                    "concept second, and then uses examples to show why the distinction matters. This structure prevents "
-                    "a common exam mistake: treating related technical terms as synonyms just because they appear in the "
-                    "same industry or textbook chapter."
+                    f"{concept} should be studied as a focused explanatory note rather than a short definition.{cite}"
+                    f"{grounding} Start by identifying what the term means, the context where it appears, and why it matters "
+                    "for learners. A strong note separates definition, causes or mechanisms, examples, consequences, and "
+                    "exam-ready distinctions, so the topic becomes understandable without mixing it with unrelated fields. "
+                    "This also helps the learner notice whether a later diagram or image is genuinely explaining the topic."
                 ),
             },
             {
                 "type": "text",
-                "heading": "Core Definition",
+                "heading": "Core Meaning",
                 "body": (
-                    "Artificial intelligence is the wider field concerned with building systems that perform tasks associated "
-                    "with human intelligence, such as reasoning, planning, perception, language understanding, decision-making, "
-                    "and problem solving. In an advanced exam, the key point is that AI is a goal-oriented umbrella term: it "
-                    "describes the ambition to create intelligent behavior, whether that behavior comes from hand-written rules, "
-                    "search algorithms, symbolic logic, probabilistic models, or learned patterns. AI therefore includes both "
-                    "systems that learn and systems that follow carefully designed procedures."
+                    f"The core meaning of {concept} should be stated in plain language first, then refined with technical detail. "
+                    "The learner should be able to answer three questions: what the topic is, what it is not, and what features "
+                    "make it recognizable. When sources are available, the safest approach is to keep the wording close to the "
+                    "source and avoid adding unsupported claims. This makes the note useful for both revision and explanation."
+                    " In an exam answer, this section should usually be short but exact, because unclear definitions often cause "
+                    "the rest of the answer to drift away from the requested topic."
                 ),
             },
             {
                 "type": "text",
-                "heading": "Where Machine Learning Fits",
+                "heading": "Background and Context",
                 "body": (
-                    "Machine learning is a major subfield of AI that focuses on systems improving their performance from data. "
-                    "Instead of programming every rule directly, engineers provide examples, feedback, or experience, and the "
-                    "model learns patterns that can generalize to new cases. This means every ML system is part of AI when it is "
-                    "used for intelligent behavior, but not every AI system is ML. A rule-based chess engine, for example, may be "
-                    "AI without being machine learning. The exam phrase to remember is: ML is a data-driven technique for "
-                    "achieving some AI behavior."
+                    "Background context explains where the topic belongs in a wider subject area. This section should connect "
+                    "the term to related concepts, common situations, and the vocabulary a student is likely to meet in class "
+                    "or exams. If the topic is sensitive, such as health, law, or finance, the note should describe concepts "
+                    "educationally and avoid presenting itself as personal professional advice. Context also helps separate the "
+                    "topic from similar terms that may sound related but belong to a different explanation."
                 ),
             },
             {
                 "type": "text",
-                "heading": "Main Differences",
+                "heading": "Mechanism or Explanation",
                 "body": (
-                    "The most important difference is scope. AI is the broad discipline; ML is one method within that discipline. "
-                    "AI asks, 'How can a machine act intelligently?' ML asks, 'How can a machine learn from data?' AI can use rules, "
-                    "logic, planning, search, optimization, robotics, and ML. ML specifically depends on datasets, training, model "
-                    "parameters, evaluation metrics, and generalization. For exam answers, this hierarchy is often the safest way "
-                    "to explain the relationship."
+                    "A useful note should explain the mechanism behind the topic: the process, causes, structure, or chain of "
+                    "events that makes the concept work. For abstract topics, this may be a relationship map. For scientific "
+                    "topics, it may be a pathway, system, or set of contributing factors. This section should avoid vague wording "
+                    "and focus on the specific features that would help a learner recognize the topic in an exam question."
+                    " When a mechanism is uncertain or varies by case, the note should say so rather than forcing a single simple cause."
                 ),
             },
             {
                 "type": "text",
-                "heading": "Examples and Applications",
+                "heading": "Examples and Recognition",
                 "body": (
-                    "A virtual assistant combines several AI capabilities: speech recognition, language understanding, dialogue "
-                    "management, search, and decision-making. Some of these parts may use machine learning, while others may use "
-                    "rules or retrieval. Image classification, recommendation systems, spam detection, and predictive analytics are "
-                    "clear examples of machine learning because their behavior depends on patterns learned from data. Autonomous "
-                    "robots, expert systems, and game-playing agents may combine ML with other AI techniques."
+                    "Examples make the note concrete. They should be chosen because they clarify the definition, not because they "
+                    "are merely interesting. A good example shows how the topic appears in real situations, what signs or features "
+                    "identify it, and how it differs from nearby ideas. This is also where a learner can connect the term to diagrams, "
+                    "case descriptions, historical examples, or practical observations."
+                    " The best examples are specific enough to remember but general enough that they do not become misleading."
                 ),
             },
             {
                 "type": "text",
-                "heading": "Advanced Exam Takeaway",
+                "heading": "Study Takeaway",
                 "body": (
-                    "A precise answer should avoid saying AI and ML are the same. AI is the larger objective of making machines "
-                    "perform intelligent tasks; ML is a data-driven route for achieving some of those tasks. Deep learning is an "
-                    "even narrower subset of ML that uses multi-layer neural networks. The clean hierarchy is: Artificial Intelligence "
-                    "contains Machine Learning, and Machine Learning contains Deep Learning. Use this hierarchy, then support it with "
-                    "contrasting examples."
+                    "For revision, compress the topic into a definition, two or three key features, one mechanism, and one example. "
+                    "Then test whether the explanation still makes sense when the headings are hidden. If the topic is high sensitivity, "
+                    "remember that the note is for education only: it should explain concepts accurately, cite sources when possible, "
+                    "and avoid diagnosis, treatment instructions, legal advice, or financial recommendations."
+                    " A good final check is whether every heading, source, image, and diagram still points back to the original topic."
                 ),
             },
         ],
@@ -130,44 +158,44 @@ def _fallback_note_data(concept: str, rag_results: List[dict]) -> Dict[str, Any]
             {
                 "after_section_index": 0,
                 "visual_type": "diagram",
-                "purpose": "Show the broad-to-narrow hierarchy before details begin.",
-                "query": f"{concept} hierarchy AI ML deep learning",
-                "placement_reason": "The hierarchy diagram belongs after the introduction because it anchors the rest of the note.",
+                "purpose": "Show the main topic and its surrounding context before details begin.",
+                "query": f"{concept} overview concept map",
+                "placement_reason": "The opening diagram anchors the reader before the detailed explanation.",
             },
             {
                 "after_section_index": 1,
                 "visual_type": "searched_image",
-                "purpose": "Provide a real reference image for the broader AI field.",
-                "query": "artificial intelligence applications diagram Wikimedia Commons",
-                "placement_reason": "A reference image after the AI definition helps connect the term to recognizable applications.",
+                "purpose": "Provide a real educational reference image related to the core meaning.",
+                "query": f"{concept} Wikimedia Commons educational image",
+                "placement_reason": "A reference image after the definition helps ground the term visually.",
             },
             {
                 "after_section_index": 2,
                 "visual_type": "diagram",
-                "purpose": "Show how machine learning uses data, training, and prediction.",
-                "query": "machine learning training data model prediction flow",
-                "placement_reason": "This belongs after the ML section because it visualizes the data-driven mechanism.",
+                "purpose": "Map the topic to its wider background and related ideas.",
+                "query": f"{concept} background context diagram",
+                "placement_reason": "This belongs after the context section because it organizes related concepts.",
             },
             {
                 "after_section_index": 3,
                 "visual_type": "diagram",
-                "purpose": "Compare AI and ML side by side across scope, method, and examples.",
-                "query": f"{concept} comparison table scope methods examples",
-                "placement_reason": "A comparison visual belongs after the differences section to make the contrast memorable.",
+                "purpose": "Visualize the mechanism or explanatory pathway.",
+                "query": f"{concept} mechanism explanatory diagram",
+                "placement_reason": "A mechanism visual belongs after the explanation section to make the process easier to remember.",
             },
             {
                 "after_section_index": 4,
                 "visual_type": "searched_image",
-                "purpose": "Add an application-oriented visual reference for real-world AI and ML use.",
-                "query": "machine learning applications Wikimedia Commons",
-                "placement_reason": "An application image belongs after examples because it grounds abstract terms in real systems.",
+                "purpose": "Add a real-world or educational visual reference for the examples.",
+                "query": f"{concept} examples Wikimedia Commons",
+                "placement_reason": "An example image belongs after examples because it connects the note to recognizable cases.",
             },
             {
                 "after_section_index": 5,
                 "visual_type": "diagram",
-                "purpose": "Summarize the final exam hierarchy: AI contains ML contains deep learning.",
-                "query": "AI ML deep learning nested hierarchy exam summary",
-                "placement_reason": "A final hierarchy diagram helps the learner remember the exam-safe conclusion.",
+                "purpose": "Summarize the main points as an exam-ready memory map.",
+                "query": f"{concept} study summary diagram",
+                "placement_reason": "A final summary diagram helps the learner remember the note.",
             },
         ],
         "references": references,
@@ -289,6 +317,30 @@ def _searched_image_section(slot: Dict[str, Any]) -> ComposerSearchedImageSectio
     return None
 
 
+def _planned_note_data(
+    *,
+    concept: str,
+    numbered_context: str,
+    learner_type: str,
+    rag_results: List[dict],
+) -> Dict[str, Any]:
+    try:
+        raw = llm_service.compose_note_article(
+            numbered_context=numbered_context,
+            concept=concept,
+            learner_type=learner_type,
+        )
+        data = llm_service.parse_json_response(raw)
+    except Exception:
+        data = _fallback_note_data(concept, rag_results)
+
+    sections = _text_sections(data)
+    total_words = sum(len(section.body.split()) for section in sections)
+    if len(sections) < 5 or total_words < 450:
+        data = _fallback_note_data(concept, rag_results)
+    return data
+
+
 def _interleave_visuals(
     *,
     concept: str,
@@ -321,22 +373,13 @@ def compose_note(
     learner_type: str,
     rag_results: List[dict],
 ) -> ComposedNote:
-    try:
-        raw = llm_service.compose_note_article(
-            numbered_context=numbered_context,
-            concept=concept,
-            learner_type=learner_type,
-        )
-        data = llm_service.parse_json_response(raw)
-    except Exception:
-        data = _fallback_note_data(concept, rag_results)
-
+    data = _planned_note_data(
+        concept=concept,
+        numbered_context=numbered_context,
+        learner_type=learner_type,
+        rag_results=rag_results,
+    )
     sections = _text_sections(data)
-    total_words = sum(len(section.body.split()) for section in sections)
-    if len(sections) < 5 or total_words < 450:
-        data = _fallback_note_data(concept, rag_results)
-        sections = _text_sections(data)
-
     visual_plan = _clean_visual_plan(data, concept, sections)
     return ComposedNote(
         title=str(data.get("title") or concept),
@@ -352,3 +395,112 @@ def compose_note(
             if _safe_num(ref.get("num")) > 0
         ],
     )
+
+
+def compose_note_events(
+    *,
+    concept: str,
+    numbered_context: str,
+    learner_type: str,
+    rag_results: List[dict],
+) -> Generator[ComposerEvent, None, None]:
+    yield _status(
+        "planning_note",
+        "Planning the best note format for this request...",
+        detail=concept,
+    )
+    yield _status(
+        "writing_article",
+        "Writing 5-7 exam-ready note sections...",
+        detail=learner_type,
+    )
+    data = _planned_note_data(
+        concept=concept,
+        numbered_context=numbered_context,
+        learner_type=learner_type,
+        rag_results=rag_results,
+    )
+    sections = _text_sections(data)
+    visual_plan = _clean_visual_plan(data, concept, sections)
+    total_visuals = len(visual_plan)
+
+    yield _status(
+        "planning_visuals",
+        "Planning meaningful visual placements for each major paragraph...",
+        current=0,
+        total=total_visuals,
+    )
+    yield {
+        "event": "title",
+        "data": {
+            "title": str(data.get("title") or concept),
+            "note_type": str(data.get("note_type") or "conceptual_explainer"),
+        },
+    }
+
+    by_index: Dict[int, List[Dict[str, Any]]] = {}
+    for slot in visual_plan:
+        by_index.setdefault(slot["after_section_index"], []).append(slot)
+
+    visual_count = 0
+    for index, section in enumerate(sections):
+        yield {
+            "event": "section",
+            "data": section.model_dump(),
+        }
+        for slot in by_index.get(index, []):
+            visual_count += 1
+            visual = None
+            if slot["visual_type"] == "searched_image":
+                yield _status(
+                    "searching_images",
+                    f"Searching Wikimedia Commons for {slot['query']}...",
+                    detail=slot["query"],
+                    current=visual_count,
+                    total=total_visuals,
+                )
+                visual = _searched_image_section(slot)
+                if visual is None:
+                    yield _status(
+                        "generating_diagram",
+                        "No suitable image found, generating a diagram instead...",
+                        detail=slot["query"],
+                        current=visual_count,
+                        total=total_visuals,
+                    )
+            else:
+                yield _status(
+                    "generating_diagram",
+                    f"Generating diagram {visual_count} of {total_visuals}: {slot['query']}...",
+                    detail=slot["query"],
+                    current=visual_count,
+                    total=total_visuals,
+                )
+
+            if visual is None:
+                nearby_text = f"{section.heading or concept}\n{section.body}"
+                visual = _diagram_section(slot, nearby_text)
+            if visual is not None:
+                yield _status(
+                    "placing_visual",
+                    f"Placing visual after {section.heading or 'the introduction'}...",
+                    detail=slot["placement_reason"],
+                    current=visual_count,
+                    total=total_visuals,
+                )
+                yield {
+                    "event": "section",
+                    "data": visual.model_dump(),
+                }
+
+    yield _status(
+        "finalizing_references",
+        "Finalizing citations and source references...",
+    )
+    references = [
+        ComposerReference(num=_safe_num(ref.get("num")), excerpt=str(ref.get("excerpt", ""))[:120])
+        for ref in data.get("references", [])
+        if _safe_num(ref.get("num")) > 0
+    ]
+    yield {"event": "references_raw", "data": references}
+    yield _status("complete", "Visual note is ready.")
