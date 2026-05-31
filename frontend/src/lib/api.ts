@@ -101,6 +101,7 @@ export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "quiz"; questions: QuizQuestion[] }
   | { type: "web_results"; results: { title: string; url: string; snippet: string }[] }
+  | { type: "image_results"; results: { title: string; image: string; thumbnail: string; url: string; source: string }[] }
   | { type: "tool_result"; title: string; data: Record<string, unknown> }
   | { type: "diagram"; diagram: DiagramData };
 export type ChatResponse = {

@@ -1,5 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   sendChatMessageStream,
   ChatBlock,
@@ -29,6 +31,12 @@ function historyContent(message: Message): string {
           .map((result, index) => `Web result ${index + 1}: ${result.title} ${result.url} ${result.snippet}`)
           .join("\n")
       );
+    } else if (block.type === "image_results") {
+      parts.push(
+        block.results
+          .map((result, index) => `Image result ${index + 1}: ${result.title} ${result.url} ${result.source}`)
+          .join("\n")
+      );
     } else if (block.type === "quiz") {
       parts.push(block.questions.map((q, index) => `Quiz ${index + 1}: ${q.question}`).join("\n"));
     } else if (block.type === "diagram") {
@@ -45,6 +53,47 @@ function historyContent(message: Message): string {
     );
   }
   return parts.filter(Boolean).join("\n\n").slice(0, 3000);
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p style={{ margin: "0 0 0.75rem" }}>{children}</p>,
+        strong: ({ children }) => <strong style={{ fontWeight: 800 }}>{children}</strong>,
+        em: ({ children }) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+        ul: ({ children }) => <ul style={{ margin: "0 0 0.85rem 1.1rem", padding: 0 }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ margin: "0 0 0.85rem 1.1rem", padding: 0 }}>{children}</ol>,
+        li: ({ children }) => <li style={{ margin: "0.25rem 0", paddingLeft: "0.2rem" }}>{children}</li>,
+        a: ({ children, href }) => (
+          <a href={href} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)", textDecoration: "underline", textUnderlineOffset: "2px" }}>
+            {children}
+          </a>
+        ),
+        h1: ({ children }) => <h1 style={{ fontSize: "1.1rem", lineHeight: 1.35, margin: "0 0 0.75rem" }}>{children}</h1>,
+        h2: ({ children }) => <h2 style={{ fontSize: "1rem", lineHeight: 1.35, margin: "0.25rem 0 0.65rem" }}>{children}</h2>,
+        h3: ({ children }) => <h3 style={{ fontSize: "0.92rem", lineHeight: 1.35, margin: "0.25rem 0 0.55rem" }}>{children}</h3>,
+        blockquote: ({ children }) => (
+          <blockquote style={{ margin: "0 0 0.85rem", paddingLeft: "0.8rem", borderLeft: "3px solid var(--border)", color: "var(--text-secondary)" }}>
+            {children}
+          </blockquote>
+        ),
+        code: ({ children }) => (
+          <code style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "4px", padding: "0.08rem 0.28rem", fontSize: "0.78rem" }}>
+            {children}
+          </code>
+        ),
+        pre: ({ children }) => (
+          <pre style={{ margin: "0 0 0.85rem", overflowX: "auto", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.7rem", whiteSpace: "pre" }}>
+            {children}
+          </pre>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 function ToolBlock({ block }: { block: ChatBlock }) {
@@ -76,6 +125,30 @@ function ToolBlock({ block }: { block: ChatBlock }) {
             <div style={{ fontWeight: 700 }}>{result.title}</div>
             <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", overflowWrap: "anywhere" }}>{result.url}</div>
             <p style={{ marginTop: "0.35rem", color: "var(--text-secondary)" }}>{result.snippet}</p>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "image_results") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.55rem" }}>
+        {block.results.map((result, i) => (
+          <a key={i} href={result.url || result.image} target="_blank" rel="noreferrer" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", background: "var(--bg-base)", color: "inherit", textDecoration: "none" }}>
+            <div
+              role="img"
+              aria-label={result.title}
+              style={{
+                width: "100%",
+                aspectRatio: "4 / 3",
+                background: `rgba(255,255,255,0.04) url("${result.thumbnail || result.image}") center / cover no-repeat`,
+              }}
+            />
+            <div style={{ padding: "0.55rem" }}>
+              <div style={{ fontWeight: 700, fontSize: "0.78rem", lineHeight: 1.35 }}>{result.title}</div>
+              {result.source && <div style={{ color: "var(--text-muted)", fontSize: "0.68rem", marginTop: "0.25rem", overflowWrap: "anywhere" }}>{result.source}</div>}
+            </div>
           </a>
         ))}
       </div>
@@ -310,7 +383,6 @@ export default function ChatPage() {
                   fontSize: "0.85rem",
                   lineHeight: 1.65,
                   color: "var(--text-primary)",
-                  whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
               >
@@ -318,6 +390,10 @@ export default function ChatPage() {
                   <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)" }}>
                     <span className="spinner" /> {msg.content || "Thinking..."}
                   </span>
+                ) : msg.role === "assistant" ? (
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <MarkdownContent content={msg.content} />
+                  </div>
                 ) : (
                   msg.content
                 )}

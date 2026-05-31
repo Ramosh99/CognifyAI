@@ -16,6 +16,7 @@ Intent = Literal[
     "analyze",
     "visual",
     "web_search",
+    "image_search",
     "mcp_action",
     "multi_tool",
 ]
@@ -199,6 +200,24 @@ class AgentService:
             ],
         }
 
+    def _image_search_node(self, state: AgentState) -> AgentState:
+        result = chat_tools.search_images(
+            query=state["message"],
+            history=state.get("history", []),
+            topic=state.get("topic"),
+        )
+        return {
+            **state,
+            "response": result["response"],
+            "blocks": result["blocks"],
+            "quiz": result["quiz"],
+            "feedback": result["feedback"],
+            "actions": [
+                *state.get("actions", []),
+                result["action"],
+            ],
+        }
+
     def _mcp_action_node(self, state: AgentState) -> AgentState:
         result = chat_tools.call_mcp_tool(message=state["message"])
         return {
@@ -233,7 +252,7 @@ class AgentService:
     def _next_after_route(self, state: AgentState) -> str:
         if state["intent"] == "normal":
             return "normal"
-        if state["intent"] in {"web_search", "mcp_action", "multi_tool"}:
+        if state["intent"] in {"web_search", "image_search", "mcp_action", "multi_tool"}:
             return state["intent"]
         return "retrieve"
 
@@ -268,6 +287,7 @@ class AgentService:
         graph.add_node("analyze_node", self._analyze_node)
         graph.add_node("visual_node", self._visual_node)
         graph.add_node("web_search_node", self._web_search_node)
+        graph.add_node("image_search_node", self._image_search_node)
         graph.add_node("mcp_action_node", self._mcp_action_node)
         graph.add_node("multi_tool_node", self._multi_tool_node)
 
@@ -279,6 +299,7 @@ class AgentService:
                 "normal": "normal_node",
                 "retrieve": "retrieve",
                 "web_search": "web_search_node",
+                "image_search": "image_search_node",
                 "mcp_action": "mcp_action_node",
                 "multi_tool": "multi_tool_node",
             },
@@ -300,6 +321,7 @@ class AgentService:
             "analyze_node",
             "visual_node",
             "web_search_node",
+            "image_search_node",
             "mcp_action_node",
             "multi_tool_node",
         ):
@@ -310,6 +332,14 @@ class AgentService:
         state = self._route_node(state)
         if state["intent"] == "normal":
             return self._normal_node(state)
+        if state["intent"] == "web_search":
+            return self._web_search_node(state)
+        if state["intent"] == "image_search":
+            return self._image_search_node(state)
+        if state["intent"] == "mcp_action":
+            return self._mcp_action_node(state)
+        if state["intent"] == "multi_tool":
+            return self._multi_tool_node(state)
         state = self._retrieve_node(state)
         if state["intent"] == "quiz":
             return self._quiz_node(state)
@@ -317,12 +347,6 @@ class AgentService:
             return self._analyze_node(state)
         if state["intent"] == "visual":
             return self._visual_node(state)
-        if state["intent"] == "web_search":
-            return self._web_search_node(state)
-        if state["intent"] == "mcp_action":
-            return self._mcp_action_node(state)
-        if state["intent"] == "multi_tool":
-            return self._multi_tool_node(state)
         return self._study_node(state)
 
     def run(

@@ -4,7 +4,7 @@ from typing import Dict, List, Literal, Optional, TypedDict
 from app.services.llm_service import llm_service
 
 
-QueryTarget = Literal["web_search", "document_search", "quiz", "visual"]
+QueryTarget = Literal["web_search", "image_search", "document_search", "quiz", "visual"]
 
 
 class PlannedQuery(TypedDict):
@@ -21,6 +21,7 @@ Rules:
 - Never pass through conversational wording such as "can you", "find", "search", "about this".
 - Resolve pronouns and vague references like "this", "it", "that topic", "these results" from recent chat history.
 - If the latest message asks for YouTube/videos, produce a web query containing site:youtube.com.
+- For image_search, produce visual search keywords for the topic being learned.
 - For document_search, produce a concise semantic retrieval query, not a web-style query.
 - For web_search, include useful search keywords and constraints.
 - If there is no resolvable topic, use the latest meaningful subject from the conversation.

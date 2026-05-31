@@ -10,6 +10,7 @@ Intent = Literal[
     "analyze",
     "visual",
     "web_search",
+    "image_search",
     "mcp_action",
     "multi_tool",
 ]
@@ -30,6 +31,7 @@ Available intents:
 - quiz: requests to generate quizzes, MCQs, tests, practice questions, or "test me" style prompts.
 - analyze: requests to analyze a wrong answer, misconception, mistake, or why an answer is incorrect.
 - visual: requests for diagrams, visual explanations, mind maps, flowcharts, concept maps, or visual structure.
+- image_search: requests to find public images, pictures, photos, screenshots, or visual references about what is being learned.
 - web_search: requests to search the web, find current/latest information, look up anything outside uploaded notes, or find public YouTube videos/resources.
 - mcp_action: requests to read or modify connected private apps/tools such as calendar, Drive, Docs, email, or other MCP connectors.
 - multi_tool: requests that clearly require more than one tool, such as finding web/YouTube material and then making a study plan.
@@ -40,11 +42,12 @@ Routing rules:
 - If wrong_answer or correct_answer is supplied, prefer analyze.
 - If the message asks for both explanation and quiz, choose quiz when assessment/practice is the final requested action.
 - If the message asks for visual output or diagrammatic explanation, choose visual.
+- If the user asks to find images or pictures, choose image_search.
 - If the user asks to find YouTube videos, choose web_search unless they ask to use a private YouTube account action.
 - When unsure between normal and study, choose study if the user appears to ask about a subject or concept.
 
 Output ONLY valid JSON with this schema:
-{"intent":"normal|study|quiz|analyze|visual|web_search|mcp_action|multi_tool","reason":"short reason"}
+{"intent":"normal|study|quiz|analyze|visual|image_search|web_search|mcp_action|multi_tool","reason":"short reason"}
 """
 
 
@@ -64,6 +67,8 @@ def _fallback_route(
         return {"intent": "quiz", "reason": "message asks for practice questions"}
     if any(term in text for term in ("diagram", "visual", "mind map", "flowchart")):
         return {"intent": "visual", "reason": "message asks for visual output"}
+    if any(term in text for term in ("image", "images", "picture", "pictures", "photo", "photos", "screenshot", "screenshots")):
+        return {"intent": "image_search", "reason": "message asks for image lookup"}
     if any(term in text for term in ("search", "google", "web", "latest", "current", "youtube", "video")):
         return {"intent": "web_search", "reason": "message asks for web lookup"}
     if any(term in text for term in ("calendar", "google drive", "docs", "gmail")):
@@ -117,6 +122,7 @@ Return the route JSON now."""
             "quiz",
             "analyze",
             "visual",
+            "image_search",
             "web_search",
             "mcp_action",
             "multi_tool",
