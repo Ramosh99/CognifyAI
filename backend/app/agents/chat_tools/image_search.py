@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Tuple
 
 import requests
@@ -8,6 +9,42 @@ except ImportError:
     DDGS = None
 
 from app.agents.chat_tools.query_planner import plan_query
+
+
+def _plain_text(value: str) -> str:
+    clean = re.sub(r"<[^>]+>", "", value or "")
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.strip()
+
+
+def _image_query_variants(search_query: str) -> List[str]:
+    base = re.sub(r"\b(wikimedia commons|wikipedia|wikiimage)\b", "", search_query, flags=re.I)
+    base = re.sub(r"\b(architecture|educational image|reference image)\b", "", base, flags=re.I)
+    base = re.sub(r"\s+", " ", base).strip()
+    variants = [search_query, base]
+
+    simplified = re.sub(
+        r"\b(diagram|visualization|visualisation|applications?|examples?|comparison|overview)\b",
+        "",
+        base,
+        flags=re.I,
+    )
+    simplified = re.sub(r"\s+", " ", simplified).strip()
+    if simplified:
+        variants.append(simplified)
+
+    words = simplified.split()
+    if len(words) > 3:
+        variants.append(" ".join(words[:3]))
+
+    unique = []
+    seen = set()
+    for query in variants:
+        key = query.lower()
+        if query and key not in seen:
+            seen.add(key)
+            unique.append(query)
+    return unique
 
 
 def _duckduckgo_image_search(search_query: str) -> Tuple[List[Dict[str, str]], str | None]:
@@ -70,7 +107,7 @@ def _wikimedia_image_search(search_query: str) -> Tuple[List[Dict[str, str]], st
                 continue
             title = str(page.get("title", "")).replace("File:", "").strip()
             metadata = image_info.get("extmetadata") or {}
-            source = (metadata.get("Artist") or {}).get("value") or "Wikimedia Commons"
+            source = _plain_text((metadata.get("Artist") or {}).get("value") or "Wikimedia Commons")
             results.append(
                 {
                     "title": title,
@@ -94,9 +131,24 @@ def search_images(*, query: str, history: List[Dict[str, str]], topic: str | Non
         topic=topic,
     )
     search_query = planned["query"]
-    results, error = _duckduckgo_image_search(search_query)
+    prefer_wikimedia = bool(re.search(r"\b(wikimedia|wikipedia|wikiimage)\b", query, flags=re.I))
+    results: List[Dict[str, str]] = []
+    error = None
+    if prefer_wikimedia:
+        for fallback_query in _image_query_variants(search_query):
+            results, error = _wikimedia_image_search(fallback_query)
+            if results:
+                provider = "Wikimedia Commons"
+                break
     if not results:
-        fallback_results, fallback_error = _wikimedia_image_search(search_query)
+        results, error = _duckduckgo_image_search(search_query)
+    if not results:
+        fallback_results = []
+        fallback_error = None
+        for fallback_query in _image_query_variants(search_query):
+            fallback_results, fallback_error = _wikimedia_image_search(fallback_query)
+            if fallback_results:
+                break
         if fallback_results:
             results = fallback_results
             provider = "Wikimedia Commons"

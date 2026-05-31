@@ -7,9 +7,10 @@ import json
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from typing import Dict, List, Optional, Literal, Tuple, Union, Generator
 
+from app.agents.note_composer_agent import compose_note
 from app.agents.visual_tools import build_diagram
 from app.core.auth import get_current_user_id
 from app.services.rag_service import rag_service
@@ -84,15 +85,31 @@ class ImageSection(BaseModel):
     type: Literal["image"]
     caption: str
     diagram: DiagramData
+    purpose: Optional[str] = None
+    placement_reason: Optional[str] = None
 
 
-Section = Union[TextSection, ImageSection]
+class SearchedImageSection(BaseModel):
+    type: Literal["searched_image"]
+    caption: str
+    title: str
+    image: str
+    thumbnail: str
+    url: str
+    source: str
+    purpose: Optional[str] = None
+    placement_reason: Optional[str] = None
+
+
+Section = Union[TextSection, ImageSection, SearchedImageSection]
+SectionAdapter = TypeAdapter(Section)
 
 
 # ── Response ───────────────────────────────────────────────────────────────────
 
 class VisualResponse(BaseModel):
     title: str
+    note_type: Optional[str] = None
     sections: List[Section]
     references: List[Reference]
 
@@ -263,6 +280,22 @@ def _strip_fences(raw: str) -> str:
     return clean.strip()
 
 
+def _references_from_composer(composer_refs, rag_results: List[dict]) -> List[Reference]:
+    references: List[Reference] = []
+    for ref in composer_refs:
+        num = ref.num
+        idx = num - 1
+        rag = rag_results[idx] if 0 <= idx < len(rag_results) else {}
+        references.append(Reference(
+            num=num,
+            excerpt=(ref.excerpt or rag.get("text", ""))[:120],
+            topic=rag.get("topic"),
+            source=rag.get("source"),
+            score=rag.get("score", 0.0),
+        ))
+    return references
+
+
 # ── Endpoint ───────────────────────────────────────────────────────────────────
 
 @router.post("/explain", response_model=VisualResponse)
@@ -286,44 +319,18 @@ def visual_explain(
     )
 
     # 2. Single LLM call → full article JSON
-    try:
-        raw = llm_service.visual_explain_article(
-            numbered_context=numbered_context,
-            concept=body.concept,
-            learner_type=body.learner_type,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM error: {e}")
-
-    try:
-        data = llm_service.parse_json_response(raw)
-    except (json.JSONDecodeError, ValueError):
-        data = _fallback_article_data(body.concept, rag_results)
-
-    # 3. Parse sections
-    sections = _add_default_diagrams(
-        _parse_sections(data.get("sections", []), body.concept),
-        body.concept,
+    note = compose_note(
+        concept=body.concept,
+        numbered_context=numbered_context,
+        learner_type=body.learner_type,
+        rag_results=rag_results,
     )
 
-    # 4. Parse references
-    references: List[Reference] = []
-    for ref in data.get("references", []):
-        num = ref.get("num", 0)
-        idx = num - 1
-        rag = rag_results[idx] if 0 <= idx < len(rag_results) else {}
-        references.append(Reference(
-            num=num,
-            excerpt=ref.get("excerpt", rag.get("text", ""))[:120],
-            topic=rag.get("topic"),
-            source=rag.get("source"),
-            score=rag.get("score", 0.0),
-        ))
-
     return VisualResponse(
-        title=data.get("title", body.concept),
-        sections=sections,
-        references=references,
+        title=note.title,
+        note_type=note.note_type,
+        sections=[SectionAdapter.validate_python(section.model_dump()) for section in note.sections],
+        references=_references_from_composer(note.references, rag_results),
     )
 
 
@@ -348,46 +355,22 @@ def _stream_visual(body: VisualRequest, user_id: str) -> Generator[str, None, No
         f"[{i+1}] {r['text'][:_CHUNK_CHAR_LIMIT]}" for i, r in enumerate(rag_results)
     )
 
-    # 2. LLM call (full JSON, but we'll parse & stream sections)
-    try:
-        raw = llm_service.visual_explain_article(
-            numbered_context=numbered_context,
-            concept=body.concept,
-            learner_type=body.learner_type,
-        )
-    except Exception as e:
-        yield _sse("error", {"detail": f"LLM error: {e}"})
-        return
-
-    try:
-        data = llm_service.parse_json_response(raw)
-    except (json.JSONDecodeError, ValueError):
-        data = _fallback_article_data(body.concept, rag_results)
+    note = compose_note(
+        concept=body.concept,
+        numbered_context=numbered_context,
+        learner_type=body.learner_type,
+        rag_results=rag_results,
+    )
 
     # 3. Emit title
-    yield _sse("title", {"title": data.get("title", body.concept)})
+    yield _sse("title", {"title": note.title, "note_type": note.note_type})
 
     # 4. Emit sections one-by-one
-    sections = _add_default_diagrams(
-        _parse_sections(data.get("sections", []), body.concept),
-        body.concept,
-    )
-    for section in sections:
+    for section in note.sections:
         yield _sse("section", section.model_dump())
 
     # 5. Emit references
-    references: List[Reference] = []
-    for ref in data.get("references", []):
-        num = ref.get("num", 0)
-        idx = num - 1
-        rag = rag_results[idx] if 0 <= idx < len(rag_results) else {}
-        references.append(Reference(
-            num=num,
-            excerpt=ref.get("excerpt", rag.get("text", ""))[:120],
-            topic=rag.get("topic"),
-            source=rag.get("source"),
-            score=rag.get("score", 0.0),
-        ))
+    references = _references_from_composer(note.references, rag_results)
     yield _sse("references", {"references": [r.model_dump() for r in references]})
 
     # 6. Done

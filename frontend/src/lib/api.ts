@@ -251,12 +251,27 @@ export type ImageSection = {
   type: "image";
   caption: string;
   diagram: DiagramData;
+  purpose?: string | null;
+  placement_reason?: string | null;
 };
 
-export type Section = TextSection | ImageSection;
+export type SearchedImageSection = {
+  type: "searched_image";
+  caption: string;
+  title: string;
+  image: string;
+  thumbnail: string;
+  url: string;
+  source: string;
+  purpose?: string | null;
+  placement_reason?: string | null;
+};
+
+export type Section = TextSection | ImageSection | SearchedImageSection;
 
 export type VisualResponse = {
   title: string;
+  note_type?: string | null;
   sections: Section[];
   references: VisualReference[];
 };
@@ -270,7 +285,7 @@ export const visualExplain = (body: {
 // ── Streaming visual explain (SSE) ────────────────────────────────────────────
 
 export type StreamCallbacks = {
-  onTitle:      (title: string)              => void;
+  onTitle:      (title: string | { title: string; note_type?: string | null }) => void;
   onSection:    (section: Section)           => void;
   onReferences: (refs: VisualReference[])    => void;
   onDone:       ()                           => void;
@@ -320,7 +335,7 @@ export async function visualExplainStream(
       const data  = JSON.parse(dataLine.slice("data:".length).trim());
 
       switch (event) {
-        case "title":      cbs.onTitle(data.title);            break;
+        case "title":      cbs.onTitle(data);                  break;
         case "section":    cbs.onSection(data as Section);     break;
         case "references": cbs.onReferences(data.references);  break;
         case "done":       cbs.onDone();                        return;

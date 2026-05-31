@@ -70,3 +70,33 @@ def test_image_search_falls_back_when_duckduckgo_fails(monkeypatch):
 
     assert result["blocks"][1]["type"] == "image_results"
     assert result["action"]["output"]["provider"] == "Wikimedia Commons"
+
+
+def test_image_search_prefers_wikimedia_for_wiki_queries(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.chat_tools.image_search.plan_query",
+        lambda **kwargs: {"query": "artificial intelligence applications Wikimedia Commons", "reason": "test"},
+    )
+    monkeypatch.setattr(
+        "app.agents.chat_tools.image_search._duckduckgo_image_search",
+        lambda search_query: (_ for _ in ()).throw(AssertionError("DuckDuckGo should not be first")),
+    )
+    monkeypatch.setattr(
+        "app.agents.chat_tools.image_search._wikimedia_image_search",
+        lambda search_query: (
+            [
+                {
+                    "title": "Artificial Intelligence Scale",
+                    "image": "https://upload.wikimedia.org/image.png",
+                    "thumbnail": "https://upload.wikimedia.org/thumb.png",
+                    "url": "https://commons.wikimedia.org/wiki/File:AI.png",
+                    "source": "Wikimedia Commons",
+                }
+            ],
+            None,
+        ),
+    )
+
+    result = search_images(query="artificial intelligence applications Wikimedia Commons", history=[])
+
+    assert result["action"]["output"]["provider"] == "Wikimedia Commons"

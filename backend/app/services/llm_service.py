@@ -356,6 +356,24 @@ class LLMService:
             model=self.article_model,  # use high-context model
         )
 
+    def compose_note_article(
+        self,
+        numbered_context: str,
+        concept: str,
+        learner_type: str = "Visual",
+    ) -> str:
+        """Plan and write a structured note with meaningful visual slots."""
+        user_prompt = prompts.get_note_composer_user_prompt(
+            numbered_context, concept, learner_type
+        )
+        return self._call_llm(
+            system_prompt=prompts.NOTE_COMPOSER_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.35,
+            max_tokens=4096,
+            model=self.article_model,
+        )
+
     def generate_diagram_from_selection(self, text: str) -> str:
         """Single call: emit a semantic graph (nodes + edges) for a short text snippet.
         The layout solver, not the LLM, picks coordinates."""

@@ -40,6 +40,11 @@ function readingTime(sections: Section[]): number {
   return Math.max(1, Math.round(words / 200));
 }
 
+function formatNoteType(noteType: string | null): string {
+  if (!noteType) return "visual note";
+  return noteType.replace(/_/g, " ");
+}
+
 // ── Article section renderer ──────────────────────────────────────────────────
 function ArticleSection({
   section, index, isLast, isStreaming,
@@ -68,6 +73,41 @@ function ArticleSection({
           <CitedText text={section.body} />
         </p>
       </div>
+    );
+  }
+
+  if (section.type === "searched_image") {
+    return (
+      <figure
+        data-section-index={index}
+        className="diagram-pop"
+        style={{
+          margin: "2.25rem 0", borderRadius: "14px", overflow: "hidden",
+          border: "1px solid var(--border)", background: "var(--bg-base)",
+          animationDelay: `${index * 0.06}s`,
+        }}
+      >
+        <a href={section.url || section.image} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "none", display: "block" }}>
+          <div
+            role="img"
+            aria-label={section.title}
+            style={{
+              width: "100%",
+              aspectRatio: "16 / 9",
+              background: `rgba(255,255,255,0.04) url("${section.thumbnail || section.image}") center / contain no-repeat`,
+            }}
+          />
+          <figcaption style={{
+            padding: "0.8rem 1.2rem", borderTop: "1px solid var(--border)",
+            background: "rgba(255,255,255,0.02)",
+          }}>
+            <div style={{ fontSize: "0.84rem", color: "var(--text-primary)", fontWeight: 600, lineHeight: 1.4 }}>{section.caption}</div>
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.35rem", overflowWrap: "anywhere" }}>
+              {section.title}{section.source ? ` · ${section.source}` : ""}
+            </div>
+          </figcaption>
+        </a>
+      </figure>
     );
   }
 
@@ -247,6 +287,7 @@ export default function VisualPage() {
   const [loading, setLoading]         = useState(false);
   const [streaming, setStreaming]     = useState(false);   // true while sections still arriving
   const [title, setTitle]             = useState<string | null>(null);
+  const [noteType, setNoteType]       = useState<string | null>(null);
   const [sections, setSections]       = useState<Section[]>([]);
   const [references, setReferences]   = useState<VisualReference[]>([]);
   const [error, setError]             = useState("");
@@ -346,6 +387,7 @@ export default function VisualPage() {
     setLoading(true);
     setError("");
     setTitle(null);
+    setNoteType(null);
     setSections([]);
     setReferences([]);
     setStreaming(false);
@@ -354,8 +396,10 @@ export default function VisualPage() {
       await visualExplainStream(
         { concept, learner_type: learnerType, topic: topic || undefined },
         {
-          onTitle: (t) => {
-            setTitle(t);
+          onTitle: (payload) => {
+            const titleData = typeof payload === "string" ? { title: payload, note_type: null } : payload;
+            setTitle(titleData.title);
+            setNoteType(titleData.note_type ?? null);
             setLoading(false);   // hide skeleton — switch to article view
             setStreaming(true);  // sections start arriving
             setTimeout(() => articleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
@@ -383,7 +427,7 @@ export default function VisualPage() {
     }
   };
 
-  const imgCount = sections.filter(s => s.type === "image").length;
+  const imgCount = sections.filter(s => s.type === "image" || s.type === "searched_image").length;
   const minRead  = sections.length ? readingTime(sections) : 0;
   const hasContent = title !== null;
 
@@ -489,8 +533,9 @@ export default function VisualPage() {
             </h1>
             <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
               <span className="badge">{minRead} min read</span>
+              <span className="badge">{formatNoteType(noteType)}</span>
               <span className="badge" style={{ color: "var(--accent-success)" }}>{sections.filter(s => s.type === "text").length} sections</span>
-              {imgCount > 0 && <span className="badge" style={{ color: "#06b6d4" }}>{imgCount} diagram{imgCount !== 1 ? "s" : ""}</span>}
+              {imgCount > 0 && <span className="badge" style={{ color: "#06b6d4" }}>{imgCount} visual{imgCount !== 1 ? "s" : ""}</span>}
               {references.length > 0 && <span className="badge">{references.length} source{references.length !== 1 ? "s" : ""}</span>}
               {streaming && <span className="badge" style={{ color: "#8b5cf6" }}>⟳ generating…</span>}
               {!streaming && sections.length > 0 && (
@@ -529,6 +574,7 @@ export default function VisualPage() {
                 style={{ borderRadius: "100px", padding: "0.5rem 1.5rem" }}
                 onClick={() => {
                   setTitle(null); setSections([]); setReferences([]);
+                  setNoteType(null);
                   setConcept(""); window.scrollTo({ top: 0, behavior: "smooth" });
                 }}>
                 ← Start New Research
