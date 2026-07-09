@@ -12,7 +12,6 @@ backend/app/__pycache__/
 backend/*.pyc
 backend/.pytest_cache/
 __pycache__
-__init__.py
 
 # Frontend
 frontend/node_modules/
