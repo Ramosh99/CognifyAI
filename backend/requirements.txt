@@ -6,6 +6,7 @@ click==8.3.1
 colorama==0.4.6
 deprecation==2.1.0
 distro==1.9.0
+duckduckgo_search==8.1.1
 fastapi==0.110.0
 gotrue==2.12.4
 greenlet==3.3.2

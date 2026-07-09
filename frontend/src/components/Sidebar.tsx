@@ -33,16 +33,17 @@ function NavIcon({ type, active }: { type: string; active: boolean }) {
 export default function Sidebar() {
   const path     = usePathname();
   const router   = useRouter();
-  const supabase = createClient();
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
+    const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       setEmail(data.user?.email ?? null);
     });
   }, []);
 
   const signOut = async () => {
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();

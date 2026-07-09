@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-flash-latest"
     GEMINI_TIMEOUT: float = 120.0
 
+    # Optional external tools
+    BRAVE_SEARCH_API_KEY: str = ""
+    WEB_SEARCH_TIMEOUT: float = 12.0
+
     # Embeddings
     # Dedicated embedding Space. Required so this backend stays lightweight.
     EMBEDDING_SERVICE_URL: str = ""

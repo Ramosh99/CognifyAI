@@ -1,8 +1,10 @@
 import json
+import re
 from typing import Any, Dict, Generator, List, Optional
 
 import requests
 
+from app.agents.quiz_tools import normalize_quiz
 from app.core.config import settings
 from app.core import prompts
 
@@ -67,6 +69,27 @@ class LLMService:
             raise ValueError(f"LLM returned empty content (finishReason='{finish}').")
         return text
 
+    def parse_json_response(self, raw_response: str) -> Any:
+        clean_json = raw_response.strip()
+        clean_json = re.sub(r"^```(?:json)?\s*", "", clean_json, flags=re.IGNORECASE)
+        clean_json = re.sub(r"\s*```$", "", clean_json)
+
+        parse_error: Optional[json.JSONDecodeError] = None
+        try:
+            return json.loads(clean_json)
+        except json.JSONDecodeError as e:
+            parse_error = e
+
+        starts = [idx for idx in (clean_json.find("{"), clean_json.find("[")) if idx >= 0]
+        if not starts:
+            raise parse_error or ValueError("LLM response did not contain JSON.")
+
+        start = min(starts)
+        end = max(clean_json.rfind("}"), clean_json.rfind("]"))
+        if end <= start:
+            raise parse_error or ValueError("LLM response did not contain complete JSON.")
+        return json.loads(clean_json[start : end + 1])
+
     def _call_llm(
         self,
         system_prompt: str,
@@ -116,14 +139,35 @@ class LLMService:
             system_prompt=prompts.QUIZ_GENERATION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.3,
+            max_tokens=max(1800, count * 900),
         )
 
         try:
-            clean_json = raw_response.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean_json)
-        except json.JSONDecodeError as e:
+            return normalize_quiz(self.parse_json_response(raw_response), topic, count)
+        except (json.JSONDecodeError, ValueError) as e:
             print(f"Failed to parse LLM JSON: {raw_response}")
-            raise ValueError("LLM did not return valid JSON.") from e
+            return normalize_quiz([], topic, count)
+
+    def generate_general_quiz(
+        self,
+        topic: str,
+        learner_type: str = "Textual",
+        count: int = 3,
+    ) -> List[Dict[str, Any]]:
+        user_prompt = prompts.get_general_quiz_user_prompt(topic, learner_type, count)
+
+        raw_response = self._call_llm(
+            system_prompt=prompts.QUIZ_GENERATION_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.4,
+            max_tokens=max(1800, count * 900),
+        )
+
+        try:
+            return normalize_quiz(self.parse_json_response(raw_response), topic, count)
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Failed to parse LLM JSON: {raw_response}")
+            return normalize_quiz([], topic, count)
 
     def analyze_misconception(
         self,
@@ -179,6 +223,19 @@ class LLMService:
             history=history,
         )
 
+    def general_study_chat(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        return self._call_llm(
+            system_prompt=prompts.GENERAL_STUDY_CHAT_SYSTEM_PROMPT,
+            user_prompt=prompts.get_general_study_chat_user_prompt(message),
+            temperature=0.5,
+            max_tokens=1024,
+            history=history,
+        )
+
     def stream_general_chat(
         self,
         message: str,
@@ -189,6 +246,39 @@ class LLMService:
             user_prompt=prompts.get_general_chat_user_prompt(message),
             temperature=0.5,
             max_tokens=700,
+            history=history,
+        )
+
+        response = requests.post(
+            f"{self._url('streamGenerateContent')}?alt=sse",
+            headers=self._headers(),
+            json=payload,
+            timeout=settings.GEMINI_TIMEOUT,
+            stream=True,
+        )
+        if response.status_code >= 400:
+            raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            chunk = json.loads(line.removeprefix("data: "))
+            parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in parts:
+                text = part.get("text")
+                if text:
+                    yield text
+
+    def stream_general_study_chat(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Generator[str, None, None]:
+        payload = self._build_payload(
+            system_prompt=prompts.GENERAL_STUDY_CHAT_SYSTEM_PROMPT,
+            user_prompt=prompts.get_general_study_chat_user_prompt(message),
+            temperature=0.5,
+            max_tokens=1024,
             history=history,
         )
 
@@ -262,8 +352,26 @@ class LLMService:
             system_prompt=prompts.VISUAL_ARTICLE_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             temperature=0.4,
-            max_tokens=1800,
+            max_tokens=4096,
             model=self.article_model,  # use high-context model
+        )
+
+    def compose_note_article(
+        self,
+        numbered_context: str,
+        concept: str,
+        learner_type: str = "Visual",
+    ) -> str:
+        """Plan and write a structured note with meaningful visual slots."""
+        user_prompt = prompts.get_note_composer_user_prompt(
+            numbered_context, concept, learner_type
+        )
+        return self._call_llm(
+            system_prompt=prompts.NOTE_COMPOSER_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.35,
+            max_tokens=4096,
+            model=self.article_model,
         )
 
     def generate_diagram_from_selection(self, text: str) -> str:

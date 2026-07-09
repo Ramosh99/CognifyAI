@@ -97,7 +97,20 @@ export const analyzeAnswer = (body: {
 
 export type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
 export type ChatSource = { text: string; score: number; topic?: string; source?: string };
-export type ChatResponse = { response: string; sources: ChatSource[] };
+export type ChatBlock =
+  | { type: "text"; text: string }
+  | { type: "quiz"; questions: QuizQuestion[] }
+  | { type: "web_results"; results: { title: string; url: string; snippet: string }[] }
+  | { type: "image_results"; results: { title: string; image: string; thumbnail: string; url: string; source: string }[] }
+  | { type: "tool_result"; title: string; data: Record<string, unknown> }
+  | { type: "diagram"; diagram: DiagramData };
+export type ChatResponse = {
+  response: string;
+  sources: ChatSource[];
+  blocks?: ChatBlock[];
+  intent?: string;
+  actions?: Record<string, unknown>[];
+};
 
 export const sendChatMessage = (body: {
   message: string;
@@ -107,7 +120,10 @@ export const sendChatMessage = (body: {
 
 export type ChatStreamCallbacks = {
   onStatus?: (message: string) => void;
+  onIntent?: (intent: string) => void;
+  onActions?: (actions: Record<string, unknown>[]) => void;
   onSources: (sources: ChatSource[]) => void;
+  onBlock?: (block: ChatBlock) => void;
   onToken: (text: string) => void;
   onDone: () => void;
   onError: (detail: string) => void;
@@ -162,8 +178,17 @@ export async function sendChatMessageStream(
         case "status":
           cbs.onStatus?.(data.message ?? "");
           break;
+        case "intent":
+          cbs.onIntent?.(data.intent ?? "normal");
+          break;
+        case "actions":
+          cbs.onActions?.(data as Record<string, unknown>[]);
+          break;
         case "sources":
           cbs.onSources(data as ChatSource[]);
+          break;
+        case "block":
+          cbs.onBlock?.(data as ChatBlock);
           break;
         case "token":
           cbs.onToken(data.text ?? "");
@@ -226,14 +251,37 @@ export type ImageSection = {
   type: "image";
   caption: string;
   diagram: DiagramData;
+  purpose?: string | null;
+  placement_reason?: string | null;
 };
 
-export type Section = TextSection | ImageSection;
+export type SearchedImageSection = {
+  type: "searched_image";
+  caption: string;
+  title: string;
+  image: string;
+  thumbnail: string;
+  url: string;
+  source: string;
+  purpose?: string | null;
+  placement_reason?: string | null;
+};
+
+export type Section = TextSection | ImageSection | SearchedImageSection;
 
 export type VisualResponse = {
   title: string;
+  note_type?: string | null;
   sections: Section[];
   references: VisualReference[];
+};
+
+export type VisualGenerationStatus = {
+  phase: string;
+  message: string;
+  detail?: string | null;
+  current?: number | null;
+  total?: number | null;
 };
 
 export const visualExplain = (body: {
@@ -245,7 +293,8 @@ export const visualExplain = (body: {
 // ── Streaming visual explain (SSE) ────────────────────────────────────────────
 
 export type StreamCallbacks = {
-  onTitle:      (title: string)              => void;
+  onStatus?:    (status: VisualGenerationStatus) => void;
+  onTitle:      (title: string | { title: string; note_type?: string | null }) => void;
   onSection:    (section: Section)           => void;
   onReferences: (refs: VisualReference[])    => void;
   onDone:       ()                           => void;
@@ -295,7 +344,8 @@ export async function visualExplainStream(
       const data  = JSON.parse(dataLine.slice("data:".length).trim());
 
       switch (event) {
-        case "title":      cbs.onTitle(data.title);            break;
+        case "status":     cbs.onStatus?.(data as VisualGenerationStatus); break;
+        case "title":      cbs.onTitle(data);                  break;
         case "section":    cbs.onSection(data as Section);     break;
         case "references": cbs.onReferences(data.references);  break;
         case "done":       cbs.onDone();                        return;

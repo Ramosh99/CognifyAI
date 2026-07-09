@@ -49,6 +49,15 @@ CONTEXT:
 """
 
 
+def get_general_quiz_user_prompt(topic: str, learner_type: str = "Textual", count: int = 3) -> str:
+    return f"""
+Generate {count} Concept-Aware MCQs about '{topic}' using your general subject-matter knowledge.
+Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Practical, use real-world scenarios).
+
+Because no uploaded study material was available, avoid claiming the questions came from the user's documents.
+"""
+
+
 # ---------------------------------------------------------
 # 2. Misconception Analysis & Feedback
 # ---------------------------------------------------------
@@ -129,6 +138,23 @@ def get_general_chat_user_prompt(message: str) -> str:
 Reply naturally."""
 
 
+GENERAL_STUDY_CHAT_SYSTEM_PROMPT = """
+You are CognifyAI, a friendly adaptive learning tutor.
+
+Answer study questions using reliable general knowledge when no uploaded document context is available.
+Be conversational, clear, and supportive. Keep answers concise but complete.
+Do not claim the answer is based on the user's documents or uploaded knowledge base.
+When helpful, mention that uploading material can make future answers more specific to their course notes.
+"""
+
+
+def get_general_study_chat_user_prompt(message: str) -> str:
+    return f"""USER STUDY QUESTION:
+{message}
+
+Answer as a tutor using general knowledge."""
+
+
 # ---------------------------------------------------------
 # 4. Visual Explain — Long-form ARTICLE (single LLM call)
 # ---------------------------------------------------------
@@ -144,7 +170,7 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
     {
       "type": "text",
       "heading": "Section heading (optional, omit for intro paragraph)",
-      "body": "Full paragraph(s). Write 80-180 words per section. Cite sources inline as [1], [2] etc."
+      "body": "Full paragraph. Write 70-120 words per section. Cite sources inline as [1], [2] etc. when sources exist."
     }
   ],
   "references": [
@@ -155,9 +181,10 @@ Output ONE valid JSON object with EXACTLY these keys and NO others:
 
 ARTICLE RULES:
 - ALL sections must be type "text" — do NOT include any "image" sections
-- Use 5-8 text sections totalling 700-1000 words
+- Use 4-6 text sections totalling 450-700 words
 - First section is the intro (no heading). Last section is a summary or conclusion.
-- Cite at least 3 different sources across the article using inline [N] notation
+- If sources are provided, cite up to 3 different sources across the article using inline [N] notation
+- If no source passages are provided, write from general knowledge and return an empty references array
 - excerpts in references: max 100 characters, verbatim from context
 - Write in clear, engaging prose — like a brilliant tutor explaining to a student
 - Adapt writing style for the learner type: Visual=use vivid analogies and spatial language,
@@ -173,7 +200,7 @@ def get_visual_article_user_prompt(context_with_numbers: str, concept: str, lear
 CONCEPT TO EXPLAIN: {concept}
 LEARNER STYLE: {learner_type}
 
-Write the full article JSON now. 700-1000 words of body text, all type "text" sections.
+Write the full article JSON now. 450-700 words of body text, all type "text" sections.
 Do NOT include any image sections. Output ONLY valid JSON — no markdown wrapping.
 """
 
@@ -181,6 +208,82 @@ Do NOT include any image sections. Output ONLY valid JSON — no markdown wrappi
 # ---------------------------------------------------------
 # 5. Quick Diagram — from user-selected text
 # ---------------------------------------------------------
+NOTE_COMPOSER_SYSTEM_PROMPT = """
+You are CognifyAI's note_composer_agent.
+Your job is to decide what kind of study note the learner needs, write the note, and plan only meaningful visuals.
+
+Output ONE valid JSON object with EXACTLY these keys and NO others:
+{
+  "title": "Descriptive title",
+  "note_type": "conceptual_explainer | process_walkthrough | comparison_note | practical_guide | revision_summary",
+  "sections": [
+    {
+      "type": "text",
+      "heading": "Optional heading, omit for intro",
+      "body": "One strong paragraph. Cite sources inline as [1], [2] etc. when sources exist."
+    }
+  ],
+  "visual_plan": [
+    {
+      "after_section_index": 0,
+      "visual_type": "diagram | searched_image",
+      "purpose": "Why this visual improves understanding at this exact point",
+      "query": "Specific visual/search prompt",
+      "placement_reason": "Why it belongs after this section"
+    }
+  ],
+  "references": [
+    {"num": 1, "excerpt": "Short verbatim quote from source 1 (max 100 chars)"}
+  ]
+}
+
+NOTE TYPE RULES:
+- conceptual_explainer: definitions, mental models, causes, consequences.
+- process_walkthrough: steps, pipelines, algorithms, protocols, mechanisms.
+- comparison_note: two or more ideas that must be contrasted.
+- practical_guide: how to apply, debug, use, or build something.
+- revision_summary: compact exam/review notes.
+
+VISUAL RULES:
+- Plan one visual after every major text section, normally 5-7 visuals total.
+- Each visual must have a clear teaching purpose tied to the paragraph immediately before it.
+- Use diagram when relationships, processes, feedback loops, timelines, comparisons, or mechanisms matter.
+- Use searched_image only when a real-world reference image would help.
+- For searched_image queries, prefer Wikimedia Commons / Wikipedia-style educational images.
+- Do not add decorative visuals.
+- For abstract CS/AI topics such as catastrophic forgetting, neural networks, transformers, or state machines, prefer diagrams over searched images unless a real screenshot or historical figure/object matters.
+- after_section_index is zero-based and must point to an existing text section.
+- query must be specific enough to drive a diagram generator or image search tool.
+
+ARTICLE RULES:
+- Use 5-7 text sections totaling 800-1200 words.
+- Write in a Wikipedia-style educational note: descriptive, precise, paragraph-based, and exam-ready.
+- Each section body should usually be 120-180 words, not a short summary.
+- First section is the intro and may omit heading. Last section should summarize or give a study takeaway.
+- If source passages are provided, treat them as the primary research grounding and cite them inline using [N] notation.
+- If source passages are provided, do not ignore them and do not switch to an unrelated example domain.
+- If no source passages are provided, write from reliable general knowledge and return an empty references array.
+- For high-sensitivity domains such as health, law, finance, safety, or personal advice, use cautious educational wording and avoid diagnosis, legal advice, financial advice, or instructions that should come from a professional.
+- Output ONLY valid JSON. No markdown fences, no prose outside JSON.
+"""
+
+
+def get_note_composer_user_prompt(context_with_numbers: str, concept: str, learner_type: str = "Visual") -> str:
+    return f"""NUMBERED SOURCE PASSAGES:
+{context_with_numbers}
+
+CONCEPT OR NOTE REQUEST:
+{concept}
+
+LEARNER STYLE:
+{learner_type}
+
+Compose the full Wikipedia-style note JSON now. Decide the note_type and visual_plan yourself.
+Do not produce a short overview. The note must have 5-7 substantial paragraphs and a visual plan for each major paragraph.
+Use the numbered source passages as research grounding when they exist.
+"""
+
+
 QUICK_DIAGRAM_SYSTEM_PROMPT = """
 You are a diagram planner. Given a short text snippet, output the underlying concept as a graph (nodes + edges). A separate layout solver will pick the visual style and place the nodes — you only describe semantics.
 

@@ -1,14 +1,181 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessageStream, ChatHistoryMessage, ChatSource } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  sendChatMessageStream,
+  ChatBlock,
+  ChatHistoryMessage,
+  ChatSource,
+} from "@/lib/api";
+import DiagramRenderer from "@/components/DiagramRenderer";
 
 type Message = {
   id: number;
   role: "user" | "assistant";
   content: string;
   sources?: ChatSource[];
+  blocks?: ChatBlock[];
+  intent?: string;
   loading?: boolean;
 };
+
+function historyContent(message: Message): string {
+  const parts = [message.content];
+  for (const block of message.blocks || []) {
+    if (block.type === "text") {
+      parts.push(block.text);
+    } else if (block.type === "web_results") {
+      parts.push(
+        block.results
+          .map((result, index) => `Web result ${index + 1}: ${result.title} ${result.url} ${result.snippet}`)
+          .join("\n")
+      );
+    } else if (block.type === "image_results") {
+      parts.push(
+        block.results
+          .map((result, index) => `Image result ${index + 1}: ${result.title} ${result.url} ${result.source}`)
+          .join("\n")
+      );
+    } else if (block.type === "quiz") {
+      parts.push(block.questions.map((q, index) => `Quiz ${index + 1}: ${q.question}`).join("\n"));
+    } else if (block.type === "diagram") {
+      parts.push(`Diagram: ${block.diagram.title} ${block.diagram.nodes.map((n) => n.label).join(", ")}`);
+    } else if (block.type === "tool_result") {
+      parts.push(`${block.title}: ${JSON.stringify(block.data)}`);
+    }
+  }
+  if (message.sources?.length) {
+    parts.push(
+      message.sources
+        .map((source, index) => `Source ${index + 1}: ${source.topic || ""} ${source.source || ""} ${source.text}`)
+        .join("\n")
+    );
+  }
+  return parts.filter(Boolean).join("\n\n").slice(0, 3000);
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p style={{ margin: "0 0 0.75rem" }}>{children}</p>,
+        strong: ({ children }) => <strong style={{ fontWeight: 800 }}>{children}</strong>,
+        em: ({ children }) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+        ul: ({ children }) => <ul style={{ margin: "0 0 0.85rem 1.1rem", padding: 0 }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ margin: "0 0 0.85rem 1.1rem", padding: 0 }}>{children}</ol>,
+        li: ({ children }) => <li style={{ margin: "0.25rem 0", paddingLeft: "0.2rem" }}>{children}</li>,
+        a: ({ children, href }) => (
+          <a href={href} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)", textDecoration: "underline", textUnderlineOffset: "2px" }}>
+            {children}
+          </a>
+        ),
+        h1: ({ children }) => <h1 style={{ fontSize: "1.1rem", lineHeight: 1.35, margin: "0 0 0.75rem" }}>{children}</h1>,
+        h2: ({ children }) => <h2 style={{ fontSize: "1rem", lineHeight: 1.35, margin: "0.25rem 0 0.65rem" }}>{children}</h2>,
+        h3: ({ children }) => <h3 style={{ fontSize: "0.92rem", lineHeight: 1.35, margin: "0.25rem 0 0.55rem" }}>{children}</h3>,
+        blockquote: ({ children }) => (
+          <blockquote style={{ margin: "0 0 0.85rem", paddingLeft: "0.8rem", borderLeft: "3px solid var(--border)", color: "var(--text-secondary)" }}>
+            {children}
+          </blockquote>
+        ),
+        code: ({ children }) => (
+          <code style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", borderRadius: "4px", padding: "0.08rem 0.28rem", fontSize: "0.78rem" }}>
+            {children}
+          </code>
+        ),
+        pre: ({ children }) => (
+          <pre style={{ margin: "0 0 0.85rem", overflowX: "auto", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.7rem", whiteSpace: "pre" }}>
+            {children}
+          </pre>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+function ToolBlock({ block }: { block: ChatBlock }) {
+  if (block.type === "quiz") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+        {block.questions.map((q, i) => (
+          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.7rem", background: "var(--bg-base)" }}>
+            <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>{i + 1}. {q.question}</div>
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              {q.options.map((option) => (
+                <div key={option.key} style={{ color: option.key === q.correct_key ? "var(--accent-success)" : "var(--text-secondary)" }}>
+                  <strong>{option.key}.</strong> {option.text}
+                </div>
+              ))}
+            </div>
+            {q.explanation && <p style={{ marginTop: "0.5rem", color: "var(--text-muted)" }}>{q.explanation}</p>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "web_results") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+        {block.results.map((result, i) => (
+          <a key={i} href={result.url} target="_blank" rel="noreferrer" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.65rem", background: "var(--bg-base)", color: "inherit", textDecoration: "none" }}>
+            <div style={{ fontWeight: 700 }}>{result.title}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", overflowWrap: "anywhere" }}>{result.url}</div>
+            <p style={{ marginTop: "0.35rem", color: "var(--text-secondary)" }}>{result.snippet}</p>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "image_results") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.55rem" }}>
+        {block.results.map((result, i) => (
+          <a key={i} href={result.url || result.image} target="_blank" rel="noreferrer" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", background: "var(--bg-base)", color: "inherit", textDecoration: "none" }}>
+            <div
+              role="img"
+              aria-label={result.title}
+              style={{
+                width: "100%",
+                aspectRatio: "4 / 3",
+                background: `rgba(255,255,255,0.04) url("${result.thumbnail || result.image}") center / cover no-repeat`,
+              }}
+            />
+            <div style={{ padding: "0.55rem" }}>
+              <div style={{ fontWeight: 700, fontSize: "0.78rem", lineHeight: 1.35 }}>{result.title}</div>
+              {result.source && <div style={{ color: "var(--text-muted)", fontSize: "0.68rem", marginTop: "0.25rem", overflowWrap: "anywhere" }}>{result.source}</div>}
+            </div>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === "diagram") {
+    return (
+      <div style={{ width: "100%", aspectRatio: "16 / 9", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", background: "var(--diagram-bg)" }}>
+        <DiagramRenderer data={block.diagram} />
+      </div>
+    );
+  }
+
+  if (block.type === "tool_result") {
+    return (
+      <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "0.65rem", background: "var(--bg-base)" }}>
+        <div style={{ fontWeight: 700, marginBottom: "0.35rem" }}>{block.title}</div>
+        <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "var(--text-muted)", fontSize: "0.72rem" }}>
+          {JSON.stringify(block.data, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function ChatPage() {
   const [messages, setMessages]   = useState<Message[]>([
@@ -43,7 +210,7 @@ export default function ChatPage() {
     const history: ChatHistoryMessage[] = messages
       .filter((m) => !m.loading && m.id !== 0)
       .slice(-10)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({ role: m.role, content: historyContent(m) }));
 
     try {
       await sendChatMessageStream(
@@ -52,6 +219,20 @@ export default function ChatPage() {
           onSources: (sources) => {
             setMessages((prev) =>
               prev.map((m) => (m.id === thinkingMsg.id ? { ...m, sources } : m))
+            );
+          },
+          onIntent: (intent) => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === thinkingMsg.id ? { ...m, intent } : m))
+            );
+          },
+          onBlock: (block) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === thinkingMsg.id
+                  ? { ...m, blocks: [...(m.blocks || []), block], loading: false }
+                  : m
+              )
             );
           },
           onStatus: (status) => {
@@ -131,7 +312,7 @@ export default function ChatPage() {
         <div>
           <h1>Chat</h1>
           <p style={{ marginTop: "0.15rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Answers grounded in your uploaded knowledge base
+            Study chat with notes, tools, web search, and visual outputs
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
@@ -202,7 +383,6 @@ export default function ChatPage() {
                   fontSize: "0.85rem",
                   lineHeight: 1.65,
                   color: "var(--text-primary)",
-                  whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
               >
@@ -210,10 +390,22 @@ export default function ChatPage() {
                   <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)" }}>
                     <span className="spinner" /> {msg.content || "Thinking..."}
                   </span>
+                ) : msg.role === "assistant" ? (
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <MarkdownContent content={msg.content} />
+                  </div>
                 ) : (
                   msg.content
                 )}
               </div>
+
+              {!msg.loading && msg.blocks && msg.blocks.filter((b) => b.type !== "text").length > 0 && (
+                <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {msg.blocks.filter((b) => b.type !== "text").map((block, i) => (
+                    <ToolBlock key={i} block={block} />
+                  ))}
+                </div>
+              )}
 
               {/* Sources toggle */}
               {!msg.loading && msg.sources && msg.sources.length > 0 && (
