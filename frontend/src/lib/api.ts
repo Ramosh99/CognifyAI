@@ -359,3 +359,95 @@ export type QuickDiagramResponse = { diagram: DiagramData };
 
 export const generateDiagramFromSelection = (body: { text: string }) =>
   api<QuickDiagramResponse>("/visual/diagram", { method: "POST", body: JSON.stringify(body) });
+
+// ── Audio & LiveKit ──────────────────────────────────────────
+
+export type LiveKitTokenResponse = {
+  configured: boolean;
+  server_url: string;
+  room: string;
+  participant_name: string;
+  token: string | null;
+  message?: string;
+};
+
+export const getLiveKitToken = (room = "cognify-auditory-room") =>
+  api<LiveKitTokenResponse>(`/audio/token?room=${encodeURIComponent(room)}`);
+
+
+/**
+ * Fast auditory query — calls LLM directly via /audio/query, no RAG overhead.
+ * Returns a short, spoken-word-friendly answer string.
+ */
+export const auditoryQuery = (message: string, history?: ChatHistoryMessage[]) =>
+  api<{ answer: string }>("/audio/query", {
+    method: "POST",
+    body: JSON.stringify({ message, history }),
+  });
+
+export type AuditoryStreamCallbacks = {
+  onToken: (text: string) => void;
+  onDone: () => void;
+  onError: (detail: string) => void;
+};
+
+export async function auditoryQueryStream(
+  message: string,
+  history: ChatHistoryMessage[] | undefined,
+  cbs: AuditoryStreamCallbacks,
+): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${BASE}/audio/query/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message, history }),
+  });
+
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    cbs.onError(err.detail ?? "Stream failed");
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split(/\n\n/);
+    buffer = events.pop() ?? "";
+
+    for (const raw of events) {
+      const lines = raw.trim().split("\n");
+      const eventLine = lines.find((line) => line.startsWith("event:"));
+      const dataLine = lines.find((line) => line.startsWith("data:"));
+      
+      const event = eventLine ? eventLine.slice("event:".length).trim() : "message";
+      
+      if (!dataLine) continue;
+      const dataStr = dataLine.slice("data:".length).trim();
+      if (!dataStr) continue;
+
+      const data = JSON.parse(dataStr);
+
+      switch (event) {
+        case "message":
+          if (data.text) cbs.onToken(data.text);
+          break;
+        case "done":
+          cbs.onDone();
+          return;
+        case "error":
+          cbs.onError(data.detail ?? "Stream failed");
+          return;
+      }
+    }
+  }
+}

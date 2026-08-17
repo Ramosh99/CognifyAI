@@ -13,9 +13,6 @@ class Settings(BaseSettings):
     ]
 
     # LLM
-    GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
-    GROQ_ARTICLE_MODEL: str = "llama-3.3-70b-versatile"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-flash-latest"
     GEMINI_TIMEOUT: float = 120.0
@@ -35,6 +32,14 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""   # Project Settings → API → JWT Secret
     DATABASE_URL: str = ""
+
+    # LiveKit
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
+    
+    # Hugging Face
+    HF_TOKEN: str = ""
 
     model_config = {
         "case_sensitive": True,

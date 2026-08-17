@@ -92,7 +92,9 @@ def _wikimedia_image_search(search_query: str) -> Tuple[List[Dict[str, str]], st
                 "origin": "*",
             },
             headers={
-                "User-Agent": "CognifyAI/1.0 educational image search",
+                # Wikimedia strictly requires a User-Agent with contact information (URL or email)
+                # to prevent blocking in deployed (cloud) environments.
+                "User-Agent": "CognifyAI/1.0 (https://github.com/Ramosh99/CognifyAI; admin@cognifyai.app)",
             },
             timeout=10,
         )

@@ -44,7 +44,7 @@ User selects:
 
 * Visual 👁️
 * Textual 📄
-* Practical 🛠️
+* Auditory 🎧
 
 System dynamically changes:
 
@@ -239,7 +239,7 @@ Quiz Engine:
 
 **CognifyAI – Adaptive Learning System with Concept-Aware RAG**
 
-* Designed and implemented a personalized AI learning platform using RAG pipelines with learner-type adaptation (visual, textual, practical).
+* Designed and implemented a personalized AI learning platform using RAG pipelines with learner-type adaptation (visual, textual, auditory).
 * Developed a novel misconception detection engine that maps incorrect MCQ answers to underlying conceptual misunderstandings.
 * Built a truth-aware response system with confidence scoring and contradiction detection across retrieved sources.
 * Engineered semantic quiz generation with structured reasoning metadata for each option.

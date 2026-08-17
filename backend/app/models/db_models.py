@@ -39,7 +39,7 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=True)
-    learner_type = Column(String(50), default="Textual")  # Visual | Textual | Practical
+    learner_type = Column(String(50), default="Textual")  # Visual | Textual | Auditory
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sessions = relationship("QuizSession", back_populates="user")

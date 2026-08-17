@@ -269,6 +269,40 @@ class LLMService:
                 if text:
                     yield text
 
+    def stream_auditory_query(
+        self,
+        system_prompt: str,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Generator[str, None, None]:
+        payload = self._build_payload(
+            system_prompt=system_prompt,
+            user_prompt=message,
+            temperature=0.6,
+            max_tokens=200,
+            history=history,
+        )
+
+        response = requests.post(
+            f"{self._url('streamGenerateContent')}?alt=sse",
+            headers=self._headers(),
+            json=payload,
+            timeout=settings.GEMINI_TIMEOUT,
+            stream=True,
+        )
+        if response.status_code >= 400:
+            raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            chunk = json.loads(line.removeprefix("data: "))
+            parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in parts:
+                text = part.get("text")
+                if text:
+                    yield text
+
     def stream_general_study_chat(
         self,
         message: str,

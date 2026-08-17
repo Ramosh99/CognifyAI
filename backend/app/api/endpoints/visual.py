@@ -186,99 +186,99 @@ def _parse_diagram(raw: dict, fallback_label: str) -> DiagramData:
     )
 
 
-def _parse_sections(raw_sections: list, concept: str) -> List[Section]:
-    sections: List[Section] = []
-    for s in raw_sections:
-        t = s.get("type")
-        if t == "text":
-            body = s.get("body", "").strip()
-            if body:
-                sections.append(TextSection(
-                    type="text",
-                    heading=s.get("heading") or None,
-                    body=body,
-                ))
-        elif t == "image":
-            diagram_raw = s.get("diagram", {})
-            sections.append(ImageSection(
-                type="image",
-                caption=s.get("caption", "Diagram")[:200],
-                diagram=_parse_diagram(diagram_raw, concept),
-            ))
-    return sections or [TextSection(type="text", body="No content was generated. Please try again.")]
+# def _parse_sections(raw_sections: list, concept: str) -> List[Section]:
+#     sections: List[Section] = []
+#     for s in raw_sections:
+#         t = s.get("type")
+#         if t == "text":
+#             body = s.get("body", "").strip()
+#             if body:
+#                 sections.append(TextSection(
+#                     type="text",
+#                     heading=s.get("heading") or None,
+#                     body=body,
+#                 ))
+#         elif t == "image":
+#             diagram_raw = s.get("diagram", {})
+#             sections.append(ImageSection(
+#                 type="image",
+#                 caption=s.get("caption", "Diagram")[:200],
+#                 diagram=_parse_diagram(diagram_raw, concept),
+#             ))
+#     return sections or [TextSection(type="text", body="No content was generated. Please try again.")]
 
 
-def _add_default_diagrams(sections: List[Section], concept: str) -> List[Section]:
-    if any(getattr(section, "type", None) == "image" for section in sections):
-        return sections
+# def _add_default_diagrams(sections: List[Section], concept: str) -> List[Section]:
+#     if any(getattr(section, "type", None) == "image" for section in sections):
+#         return sections
 
-    out: List[Section] = []
-    text_seen = 0
-    for section in sections:
-        out.append(section)
-        if section.type != "text":
-            continue
-        text_seen += 1
-        if text_seen in {1, 3}:
-            diagram_text = f"{section.heading or concept}\n\n{section.body}"
-            diagram = DiagramData.model_validate(build_diagram(diagram_text).model_dump())
-            out.append(ImageSection(
-                type="image",
-                caption=f"Auto-generated visual map for {section.heading or concept}",
-                diagram=diagram,
-            ))
-    return out
-
-
-def _fallback_article_data(concept: str, rag_results: List[dict]) -> dict:
-    source_hint = ""
-    references = []
-    for i, result in enumerate(rag_results[:3], start=1):
-        excerpt = result.get("text", "")[:100]
-        if excerpt:
-            references.append({"num": i, "excerpt": excerpt})
-            source_hint += f" [{i}]"
-
-    intro_cite = " [1]" if references else ""
-    return {
-        "title": f"{concept.strip()[:80] or 'Visual Explanation'}",
-        "sections": [
-            {
-                "type": "text",
-                "body": (
-                    f"{concept} can be understood as a connected system of ideas rather than a single isolated fact."
-                    f"{intro_cite} Start by identifying the main state, process, or object, then trace how information, "
-                    "control, or cause-and-effect moves through it."
-                ),
-            },
-            {
-                "type": "text",
-                "heading": "Core Structure",
-                "body": (
-                    "A useful visual explanation separates the concept into nodes and transitions. Nodes represent "
-                    "important conditions, stages, or components. Transitions show what causes movement from one node "
-                    "to another. This is especially helpful for state-machine topics, workflows, protocols, and systems "
-                    "where behavior changes after an event."
-                ),
-            },
-            {
-                "type": "text",
-                "heading": "How To Read It",
-                "body": (
-                    "Read the diagram from the starting point, follow each arrow, and ask what event or rule makes the "
-                    "system change. Loops usually mean repeated behavior. Branches usually mean decisions. End states "
-                    "show completion, failure, or a stable condition."
-                ),
-            },
-        ],
-        "references": references,
-    }
+#     out: List[Section] = []
+#     text_seen = 0
+#     for section in sections:
+#         out.append(section)
+#         if section.type != "text":
+#             continue
+#         text_seen += 1
+#         if text_seen in {1, 3}:
+#             diagram_text = f"{section.heading or concept}\n\n{section.body}"
+#             diagram = DiagramData.model_validate(build_diagram(diagram_text).model_dump())
+#             out.append(ImageSection(
+#                 type="image",
+#                 caption=f"Auto-generated visual map for {section.heading or concept}",
+#                 diagram=diagram,
+#             ))
+#     return out
 
 
-def _strip_fences(raw: str) -> str:
-    clean = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
-    clean = re.sub(r"\s*```$", "", clean.strip(), flags=re.MULTILINE)
-    return clean.strip()
+# def _fallback_article_data(concept: str, rag_results: List[dict]) -> dict:
+#     source_hint = ""
+#     references = []
+#     for i, result in enumerate(rag_results[:3], start=1):
+#         excerpt = result.get("text", "")[:100]
+#         if excerpt:
+#             references.append({"num": i, "excerpt": excerpt})
+#             source_hint += f" [{i}]"
+
+#     intro_cite = " [1]" if references else ""
+#     return {
+#         "title": f"{concept.strip()[:80] or 'Visual Explanation'}",
+#         "sections": [
+#             {
+#                 "type": "text",
+#                 "body": (
+#                     f"{concept} can be understood as a connected system of ideas rather than a single isolated fact."
+#                     f"{intro_cite} Start by identifying the main state, process, or object, then trace how information, "
+#                     "control, or cause-and-effect moves through it."
+#                 ),
+#             },
+#             {
+#                 "type": "text",
+#                 "heading": "Core Structure",
+#                 "body": (
+#                     "A useful visual explanation separates the concept into nodes and transitions. Nodes represent "
+#                     "important conditions, stages, or components. Transitions show what causes movement from one node "
+#                     "to another. This is especially helpful for state-machine topics, workflows, protocols, and systems "
+#                     "where behavior changes after an event."
+#                 ),
+#             },
+#             {
+#                 "type": "text",
+#                 "heading": "How To Read It",
+#                 "body": (
+#                     "Read the diagram from the starting point, follow each arrow, and ask what event or rule makes the "
+#                     "system change. Loops usually mean repeated behavior. Branches usually mean decisions. End states "
+#                     "show completion, failure, or a stable condition."
+#                 ),
+#             },
+#         ],
+#         "references": references,
+#     }
+
+
+# def _strip_fences(raw: str) -> str:
+#     clean = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
+#     clean = re.sub(r"\s*```$", "", clean.strip(), flags=re.MULTILINE)
+#     return clean.strip()
 
 
 def _references_from_composer(composer_refs, rag_results: List[dict]) -> List[Reference]:

@@ -9,6 +9,7 @@ const NAV = [
   { href: "/dashboard",          label: "Overview",      icon: "overview" },
   { href: "/dashboard/chat",     label: "Chat",          icon: "chat" },
   { href: "/dashboard/visual",   label: "Visual Explain", icon: "visual" },
+  { href: "/dashboard/auditory", label: "Auditory Tutor", icon: "auditory" },
   { href: "/dashboard/upload",   label: "Upload",        icon: "upload" },
   { href: "/dashboard/quiz",     label: "Quiz",          icon: "quiz" },
   { href: "/dashboard/search",   label: "Search",        icon: "search" },
@@ -22,6 +23,7 @@ function NavIcon({ type, active }: { type: string; active: boolean }) {
     case "overview": return <svg {...s}><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>;
     case "chat": return <svg {...s}><path d="M3 3h10a1 1 0 011 1v7a1 1 0 01-1 1H5l-3 3V4a1 1 0 011-1z"/></svg>;
     case "visual": return <svg {...s}><circle cx="8" cy="8" r="5"/><path d="M8 5v6M5 8h6"/></svg>;
+    case "auditory": return <svg {...s}><path d="M8 2a3 3 0 00-3 3v4a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M4 9a4 4 0 008 0M8 13v2"/></svg>;
     case "upload": return <svg {...s}><path d="M8 11V3M5 6l3-3 3 3"/><path d="M3 11v2h10v-2"/></svg>;
     case "quiz": return <svg {...s}><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>;
     case "search": return <svg {...s}><circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/></svg>;

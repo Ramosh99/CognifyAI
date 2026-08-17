@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS documents_user_id_idx
 CREATE TABLE IF NOT EXISTS users (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name         VARCHAR(255),
-    learner_type VARCHAR(50) DEFAULT 'Textual',  -- Visual | Textual | Practical
+    learner_type VARCHAR(50) DEFAULT 'Textual',  -- Visual | Textual | Auditory
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 

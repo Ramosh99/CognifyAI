@@ -60,7 +60,7 @@ class RAGService:
             {
                 "id": str(uuid.uuid4()),
                 "text": chunk,
-                "user_id": user_id,               # ← scoped to this user
+                "user_id": user_id,              
                 "topic": meta.get("topic"),
                 "source": meta.get("source"),
                 "embedding": vec,
