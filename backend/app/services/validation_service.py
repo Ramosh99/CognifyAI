@@ -122,13 +122,15 @@ Perform the grounding audit now. Output JSON only."""
             )
 
         except Exception as e:
-            # If validation call fails, return graceful default
+            # Validation call failed (rate limit, timeout, etc.)
+            # DO NOT silently pass — mark as unverified so callers can decide.
+            # We do NOT claim is_grounded=True when we cannot verify.
             return ValidationResult(
-                is_grounded=True,
-                faithfulness_score=1.0,
+                is_grounded=False,
+                faithfulness_score=0.0,
                 hallucinated_claims=[],
-                correction_feedback=None,
-                corrected_response=response_text,
+                correction_feedback=f"Validation unavailable: {type(e).__name__}. Response is unverified.",
+                corrected_response=response_text,  # return original, but flagged
             )
 
     def _self_correct(

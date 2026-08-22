@@ -36,9 +36,16 @@ CRITICAL RULES:
 
 
 class ContextService:
-    def __init__(self, max_character_budget: int = 12000, expand_parent_context: bool = True):
-        self.max_character_budget = max_character_budget
+    def __init__(self, max_token_budget: int = 6000, expand_parent_context: bool = True):
+        # Token budget (1 token ≈ 4 chars). Gemini 1.5 Flash supports 1M context
+        # but we cap at 6000 tokens to keep generation fast and focused.
+        self.max_token_budget = max_token_budget
         self.expand_parent_context = expand_parent_context
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Approximate token count using the 4-chars-per-token heuristic."""
+        return max(1, len(text) // 4)
 
     def construct_context(
         self,
@@ -84,12 +91,13 @@ class ContextService:
                 block_header += f" (Dept: {chunk.department})"
 
             block_text = f"{block_header}\nRelevance Score: {chunk.relevance_score:.2f}\nContent:\n{content}\n"
+            block_tokens = self._estimate_tokens(block_text)
 
-            if current_chars + len(block_text) > self.max_character_budget and evidence_items:
+            if current_chars + block_tokens > self.max_token_budget and evidence_items:
                 break
 
             formatted_blocks.append(block_text)
-            current_chars += len(block_text)
+            current_chars += block_tokens
 
             evidence_items.append({
                 "num": idx,
@@ -134,5 +142,5 @@ Provide a grounded, cited answer using ONLY the evidence above. Cite inline as [
         return system_prompt, user_prompt
 
 
-# Singleton instance
-context_service = ContextService(max_character_budget=12000, expand_parent_context=True)
+# Singleton instance — 6000 token budget (~24k chars), expands to parent sections
+context_service = ContextService(max_token_budget=6000, expand_parent_context=True)

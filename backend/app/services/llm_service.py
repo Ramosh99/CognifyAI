@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from typing import Any, Dict, Generator, List, Optional
 
 import requests
@@ -98,27 +99,47 @@ class LLMService:
         max_tokens: int = 1024,
         model: Optional[str] = None,
         history: Optional[List[Dict[str, str]]] = None,
+        max_retries: int = 3,
     ) -> str:
-        """Invoke Gemini. Pass model= to override the default."""
-        try:
-            response = requests.post(
-                self._url("generateContent", model),
-                headers=self._headers(),
-                json=self._build_payload(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    history=history,
-                ),
-                timeout=settings.GEMINI_TIMEOUT,
-            )
-            if response.status_code >= 400:
-                raise ValueError(f"Gemini error {response.status_code}: {response.text}")
-            return self._extract_content(response.json())
-        except Exception as e:
-            print(f"LLM Error: {e}")
-            raise
+        """Invoke Gemini with exponential backoff retry on 429/5xx errors."""
+        payload = self._build_payload(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            history=history,
+        )
+        url = self._url("generateContent", model)
+        last_exc: Exception = RuntimeError("LLM call failed.")
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    url,
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=settings.GEMINI_TIMEOUT,
+                )
+                # Retry on rate-limit (429) or server errors (5xx)
+                if response.status_code == 429 or response.status_code >= 500:
+                    wait = 2 ** attempt  # 1s, 2s, 4s
+                    print(f"Gemini {response.status_code}: retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait)
+                    last_exc = ValueError(f"Gemini error {response.status_code}: {response.text}")
+                    continue
+                if response.status_code >= 400:
+                    raise ValueError(f"Gemini error {response.status_code}: {response.text}")
+                return self._extract_content(response.json())
+            except ValueError:
+                raise
+            except Exception as e:
+                wait = 2 ** attempt
+                print(f"LLM network error: {e}. Retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait)
+                last_exc = e
+
+        print(f"LLM Error after {max_retries} retries: {last_exc}")
+        raise last_exc
 
     def generate_quiz(
         self,
