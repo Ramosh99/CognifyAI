@@ -1,29 +1,38 @@
-name: Deploy Backend to HF Spaces
+name: Deploy to Hugging Face Space
 
 on:
   push:
-    branches: [master]
-    paths:
-      - 'backend/**'   # only runs when backend files change
-  workflow_dispatch:   # allows manual trigger from GitHub Actions tab
+    branches: [master, main]        # triggers on push to either branch
+  workflow_dispatch:                 # allows manual trigger from GitHub Actions tab
 
 jobs:
-  deploy:
+  deploy-to-hf:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1            # shallow clone — no history needed for HF deploy
 
-      - name: Push backend/ to HF Space
+      - name: Configure git identity
+        run: |
+          git config user.email "ci@cognifyai.app"
+          git config user.name "CognifyAI CI"
+
+      - name: Remove binary files not allowed by HF
+        run: |
+          find . -name "*.pdf" -delete
+          find . -name "*.pkl" -delete
+          find . -name "*.bin" -not -path "./.git/*" -delete
+
+      - name: Push to Hugging Face Space (main branch)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          cd backend
-          git init
-          git config user.email "ci@cognifyai.app"
-          git config user.name "CognifyAI CI"
-          git add .
-          git commit -m "deploy: ${{ github.sha }}"
+          # Create a clean single-commit push (no history = no binary blobs)
+          git add -A
+          git diff --cached --quiet || git commit -m "ci: deploy from GitHub @ ${{ github.sha }}"
+
+          # Force push to HF main — this replaces HF's history entirely
           git push https://Ramosh99:${HF_TOKEN}@huggingface.co/spaces/Ramosh99/cognify HEAD:main --force
