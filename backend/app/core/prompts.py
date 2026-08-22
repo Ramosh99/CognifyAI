@@ -42,7 +42,7 @@ RULES:
 def get_quiz_user_prompt(context: str, topic: str, learner_type: str = "Textual", count: int = 3) -> str:
     return f"""
 Generate {count} Concept-Aware MCQs about '{topic}' using ONLY the following context.
-Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Practical, use real-world scenarios).
+Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Textual, use clear definitions & logical structure; if Auditory, use conversational & dialogue-driven phrasing).
 
 CONTEXT:
 {context}
@@ -52,7 +52,7 @@ CONTEXT:
 def get_general_quiz_user_prompt(topic: str, learner_type: str = "Textual", count: int = 3) -> str:
     return f"""
 Generate {count} Concept-Aware MCQs about '{topic}' using your general subject-matter knowledge.
-Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Practical, use real-world scenarios).
+Adapt the question style for a '{learner_type}' learner (e.g., if Visual, use spatial/diagrammatic language; if Textual, use clear definitions & logical structure; if Auditory, use conversational & dialogue-driven phrasing).
 
 Because no uploaded study material was available, avoid claiming the questions came from the user's documents.
 """
@@ -188,7 +188,8 @@ ARTICLE RULES:
 - excerpts in references: max 100 characters, verbatim from context
 - Write in clear, engaging prose — like a brilliant tutor explaining to a student
 - Adapt writing style for the learner type: Visual=use vivid analogies and spatial language,
-  Textual=precise definitions and logical structure, Practical=real-world examples and use cases
+  Textual=precise definitions and logical structure,
+  Auditory=conversational, dialogue-driven, rhythm-aware, and listening-friendly phrasing
 - OUTPUT ONLY the JSON. Absolutely no markdown, no code fences, no prose outside JSON.
 """
 

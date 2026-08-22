@@ -14,7 +14,7 @@ router = APIRouter(prefix="/learning", tags=["Learning & Analytics"])
 
 class QuizGenerateRequest(BaseModel):
     topic: str
-    learner_type: str = "Textual"  # e.g., Visual, Textual, Practical
+    learner_type: str = "Textual"  # e.g., Visual, Textual, Auditory
     question_count: int = 3
 
 class QuizGenerateResponse(BaseModel):

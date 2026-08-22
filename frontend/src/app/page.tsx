@@ -51,7 +51,7 @@ export default function HomePage() {
       {/* Feature Grid */}
       <section style={{ padding: "3rem 4rem 5rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", maxWidth: "1000px", margin: "0 auto", width: "100%" }}>
         {[
-          { label: "Adaptive", title: "Learner-Type Adaptation", desc: "Visual, Textual, or Practical — the AI matches how you think.", href: "/dashboard/visual" },
+          { label: "Adaptive", title: "Learner-Type Adaptation", desc: "Visual, Textual, or Auditory the AI matches how you think.", href: "/dashboard/visual" },
           { label: "Smart", title: "Concept-Aware MCQs", desc: "Every wrong option maps to a specific misconception.", href: "/dashboard/quiz" },
           { label: "Precise", title: "Misconception Detection", desc: "Understand which concept you confused and get targeted corrections.", href: "/dashboard/quiz" },
           { label: "Grounded", title: "Truth-Aware RAG", desc: "Answers grounded in your documents with confidence scoring.", href: "/dashboard/search" },

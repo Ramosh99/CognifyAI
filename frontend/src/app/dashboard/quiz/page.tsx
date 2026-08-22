@@ -2,14 +2,14 @@
 import { useState } from "react";
 import { generateQuiz, analyzeAnswer, QuizQuestion } from "@/lib/api";
 
-type LearnerType = "Visual" | "Textual" | "Practical";
+type LearnerType = "Visual" | "Textual" | "Auditory";
 type AnswerMap   = Record<number, string>;
 type FeedbackMap = Record<number, string>;
 
 const LEARNER_TYPES: { type: LearnerType; desc: string }[] = [
-  { type: "Visual",    desc: "Diagrams, analogies & visual structure" },
-  { type: "Textual",   desc: "Clear written explanations & definitions" },
-  { type: "Practical", desc: "Examples, use-cases & hands-on context" },
+  { type: "Visual",   desc: "Diagrams, analogies & visual structure" },
+  { type: "Textual",  desc: "Clear written explanations & definitions" },
+  { type: "Auditory", desc: "Conversational, dialogue & audio-friendly tone" },
 ];
 
 export default function QuizPage() {

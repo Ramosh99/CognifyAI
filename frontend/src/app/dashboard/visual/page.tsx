@@ -6,7 +6,7 @@ import {
 } from "@/lib/api";
 import DiagramRenderer from "@/components/DiagramRenderer";
 
-type LearnerType = "Visual" | "Textual" | "Practical";
+type LearnerType = "Visual" | "Textual" | "Auditory";
 type Tab = "concept" | "topic" | "style";
 type Popover = { text: string; sectionIndex: number; x: number; y: number };
 type ToastState = { msg: string; phase: "in" | "out" };
@@ -564,7 +564,7 @@ export default function VisualPage() {
           )}
           {activeTab === "style" && (
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-              {(["Visual", "Textual", "Practical"] as LearnerType[]).map(l => (
+              {(["Visual", "Textual", "Auditory"] as LearnerType[]).map(l => (
                 <button key={l} onClick={() => setLearnerType(l)} style={{
                   padding: "0.4rem 1.2rem", borderRadius: "4px", cursor: "pointer", transition: "all 0.2s ease",
                   border: `1px solid ${learnerType === l ? "var(--text-primary)" : "var(--border)"}`,
