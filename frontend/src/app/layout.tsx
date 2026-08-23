@@ -15,6 +15,8 @@ export const metadata: Metadata = {
     "An AI-powered personalized learning platform that adapts content to your learner type, generates concept-aware quizzes, and provides truth-validated explanations.",
 };
 
+import { Toaster } from "react-hot-toast";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
@@ -34,7 +36,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <Toaster position="bottom-right" toastOptions={{ 
+          style: { background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' },
+          success: { iconTheme: { primary: 'var(--accent-success)', secondary: '#fff' } },
+          error: { iconTheme: { primary: 'var(--accent-danger)', secondary: '#fff' } },
+        }} />
+        {children}
+      </body>
     </html>
   );
 }

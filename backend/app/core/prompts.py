@@ -407,10 +407,14 @@ Output ONLY the analogy (80 words or less)."""
 
 ADAPTIVE_TEXT_SYSTEM_PROMPT = """
 You are CognifyAI's adaptive content engine.
-Generate a clear, structured textual explanation for a specific topic at the given difficulty level.
-Use the provided context from the learner's documents as grounding.
-Write in clear paragraphs. Use bold for key terms. Keep it engaging and pedagogically sound.
-Output ONLY the explanation text (no JSON, no metadata).
+Generate a direct, concise, and engaging explanation for the topic.
+
+CRITICAL RULES:
+- Never output meta-writing instructions (e.g. NEVER write "The core meaning of X should be stated...", "Background context explains...", "A useful note should...").
+- Directly explain the topic itself with clarity and precision.
+- Keep text concise: 2-3 short, focused paragraphs maximum.
+- Use bold text for key terms. Avoid wordy academic preamble.
+Output ONLY the direct explanation text.
 """
 
 def get_adaptive_text_prompt(context: str, topic: str, difficulty: str) -> str:
@@ -538,21 +542,24 @@ Output ONLY the JSON array."""
 
 BATCH_DIAGNOSTIC_SYSTEM_PROMPT = """
 You are CognifyAI's diagnostic task generator.
-Given a learning concept, generate explanations across 6 modalities (text, diagram, example, analogy, auditory, code) AND a micro-quiz question for EACH modality in a SINGLE structured JSON object.
+Given a learning concept, generate direct, high-value explanations across 6 modalities (text, diagram, example, analogy, auditory, code) AND a micro-quiz question for EACH modality in a SINGLE structured JSON object.
+
+CRITICAL RULE:
+Do NOT output meta-language or writing instructions (e.g. NEVER write "The core meaning of X should be stated in plain language..." or "Background context explains where the topic belongs..."). Write DIRECT, precise explanations of the concept itself!
 
 Output JSON format strictly matching:
 {
   "text": {
-    "content": "Short 2-3 sentence written explanation of the concept.",
+    "content": "A direct, 2-sentence definition and intuition of the concept. Clear, precise, no academic fluff.",
     "quiz": {
-      "question": "Multiple choice question testing text comprehension.",
+      "question": "Multiple choice question testing core text understanding.",
       "options": [{"key": "A", "text": "Option 1"}, {"key": "B", "text": "Option 2"}, {"key": "C", "text": "Option 3"}, {"key": "D", "text": "Option 4"}],
       "correct_key": "A",
       "explanation": "Why this key is correct."
     }
   },
   "diagram": {
-    "mermaid": "graph TD;\n  A[Input Data] --> B[Processing Layer]\n  B --> C[Output Result]",
+    "mermaid": "graph LR;\n  Input[Input Features] --> Forward[Forward Pass: Predict Output]\n  Forward --> Loss[Compute Loss / Error]\n  Loss --> Backward[Backpropagate Error Gradient]\n  Backward --> Update[Update Weights]",
     "quiz": {
       "question": "Question testing diagram understanding.",
       "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
@@ -561,7 +568,7 @@ Output JSON format strictly matching:
     }
   },
   "example": {
-    "content": "A concrete real-world application or scenario illustrating the concept.",
+    "content": "A short, sweet real-world application showing how the concept works in practice (2-3 sentences).",
     "quiz": {
       "question": "Question testing application in scenario.",
       "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
@@ -570,7 +577,7 @@ Output JSON format strictly matching:
     }
   },
   "analogy": {
-    "content": "An intuitive metaphor or analogy explaining the concept.",
+    "content": "A vivid, intuitive 2-sentence analogy mapping the concept onto something universally familiar (e.g. archery feedback, sports coaching, cooking recipe adjustments).",
     "quiz": {
       "question": "Question testing intuition from analogy.",
       "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
@@ -579,7 +586,7 @@ Output JSON format strictly matching:
     }
   },
   "auditory": {
-    "content": "A conversational, spoken-word script (90-120 words) narrating the concept naturally.",
+    "content": "A 90-word conversational spoken-word script explaining the concept naturally as if talking to a friend over coffee.",
     "quiz": {
       "question": "Question testing listening script comprehension.",
       "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
@@ -588,7 +595,7 @@ Output JSON format strictly matching:
     }
   },
   "code": {
-    "content": "A short, well-commented pseudocode or Python snippet (max 15 lines) demonstrating the concept.",
+    "content": "A short, clean Python snippet (max 15 lines) with clear inline comments showing the core logic.",
     "quiz": {
       "question": "Question testing code logic understanding.",
       "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
@@ -599,6 +606,7 @@ Output JSON format strictly matching:
 }
 
 Rules:
+- Keep all explanations short, punchy, and crystal clear.
 - Make all 6 quizzes distinct and calibrated to testing comprehension of that specific modality's explanation.
 - Distribute correct answers across A, B, C, D randomly.
 - Output ONLY the JSON object. No markdown wrapping.

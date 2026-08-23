@@ -1,5 +1,6 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
+import toast from "react-hot-toast";
 import {
   visualExplainStream, generateDiagramFromSelection,
   VisualReference, Section, TextSection, ImageSection, VisualGenerationStatus,
@@ -9,7 +10,6 @@ import DiagramRenderer from "@/components/DiagramRenderer";
 type LearnerType = "Visual" | "Textual" | "Auditory";
 type Tab = "concept" | "topic" | "style";
 type Popover = { text: string; sectionIndex: number; x: number; y: number };
-type ToastState = { msg: string; phase: "in" | "out" };
 type GenerationStep = VisualGenerationStatus & { id: number };
 
 // ── Inline citation renderer ──────────────────────────────────────────────────
@@ -348,7 +348,6 @@ export default function VisualPage() {
   const [popover, setPopover]         = useState<Popover | null>(null);
   const [popoverLoading, setPopoverLoading] = useState(false);
   const [generatingAt, setGeneratingAt]    = useState<number | null>(null);
-  const [toast, setToast]             = useState<ToastState | null>(null);
 
   const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const articleRef = useRef<HTMLDivElement>(null);
@@ -393,13 +392,6 @@ export default function VisualPage() {
     };
   }, [title]);
 
-  const showToast = useCallback((msg: string) => {
-    setToast({ msg, phase: "in" });
-    // After 2.5s start the fade-out animation, then remove after 0.25s
-    setTimeout(() => setToast(t => t ? { ...t, phase: "out" } : null), 2500);
-    setTimeout(() => setToast(null), 2750);
-  }, []);
-
   const handleGenerateDiagram = async () => {
     if (!popover) return;
     const { text, sectionIndex } = popover;
@@ -419,7 +411,7 @@ export default function VisualPage() {
         return next;
       });
     } catch {
-      showToast("Failed to generate diagram. Try selecting more specific text.");
+      toast.error("Failed to generate diagram. Try selecting more specific text.");
     } finally {
       setPopoverLoading(false);
       setGeneratingAt(null);
@@ -430,7 +422,7 @@ export default function VisualPage() {
     if (!popover) return;
     navigator.clipboard.writeText(popover.text).catch(() => {});
     setPopover(null);
-    showToast("✓ Copied! Head to Chat and paste to explore this concept.");
+    toast.success("Copied! Head to Chat and paste to explore this concept.");
   };
 
   const generate = async () => {
@@ -451,6 +443,9 @@ export default function VisualPage() {
         { concept, learner_type: learnerType, topic: topic || undefined },
         {
           onStatus: (status) => {
+            if (status.phase === "error") {
+              toast.error(status.message, { duration: 5000 });
+            }
             setGenerationStatus(status);
             setGenerationSteps(prev => [...prev, { ...status, id: Date.now() + prev.length }]);
           },
@@ -473,13 +468,16 @@ export default function VisualPage() {
           },
           onError: (detail) => {
             setError(detail);
+            toast.error(detail);
             setLoading(false);
             setStreaming(false);
           },
         },
       );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Generation failed.");
+      const msg = e instanceof Error ? e.message : "Generation failed.";
+      setError(msg);
+      toast.error(msg);
       setLoading(false);
       setStreaming(false);
     }
@@ -491,22 +489,6 @@ export default function VisualPage() {
 
   return (
     <div style={{ maxWidth: "760px", width: "100%" }}>
-
-      {/* Toast */}
-      {toast && (
-        <div
-          className={toast.phase === "in" ? "toast-in" : "toast-out"}
-          style={{
-            position: "fixed", bottom: "2rem", left: "50%",
-            background: "var(--bg-secondary, #18181b)", border: "1px solid var(--border)",
-            borderRadius: "10px", padding: "0.6rem 1.2rem", fontSize: "0.82rem",
-            color: "var(--text-primary)", zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-            pointerEvents: "none", whiteSpace: "nowrap",
-          }}
-        >
-          {toast.msg}
-        </div>
-      )}
 
       {/* Selection popover */}
       {popover && !popoverLoading && (
@@ -576,7 +558,6 @@ export default function VisualPage() {
             </div>
           )}
         </div>
-        {error && <div style={{ padding: "0 1.5rem 1rem", color: "var(--accent-danger)", fontSize: "0.75rem", fontFamily: "ui-monospace" }}>ERROR: {error}</div>}
       </div>
 
       {/* Loading skeleton */}

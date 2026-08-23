@@ -117,4 +117,3 @@ def get_livekit_token(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate LiveKit token: {e}")
-

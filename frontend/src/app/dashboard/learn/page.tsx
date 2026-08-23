@@ -322,6 +322,18 @@ function SectionRenderer({ section }: { section: LessonSection }) {
     );
   }
 
+function formatMarkdownHTML(text: string): string {
+  if (!text) return "";
+  let html = text;
+  // Convert markdown images ![alt](url) -> <img ... />
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width:100%; height:auto; border-radius:8px; margin:1rem 0; display:block; border:1px solid var(--border);" />');
+  // Convert markdown links [text](url) -> <a ...>text</a>
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#8b5cf6; text-decoration:underline;">$1</a>');
+  // Convert bold **text** -> <strong>text</strong>
+  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  return html;
+}
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -332,11 +344,12 @@ function SectionRenderer({ section }: { section: LessonSection }) {
       </div>
       <div
         style={{ fontSize: "0.92rem", lineHeight: 1.9, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}
-        dangerouslySetInnerHTML={{ __html: (section.content ?? "").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") }}
+        dangerouslySetInnerHTML={{ __html: formatMarkdownHTML(section.content ?? "") }}
       />
     </div>
   );
 }
+
 
 function DiagramSection({ rawJson, label }: { rawJson: string; label: string }) {
   let cleanCode = (rawJson ?? "").trim().replace(/^```(?:mermaid)?/i, "").replace(/```$/, "").trim();
