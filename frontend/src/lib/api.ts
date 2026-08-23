@@ -451,3 +451,143 @@ export async function auditoryQueryStream(
     }
   }
 }
+
+// ── Adaptive Learning ──────────────────────────────────
+
+export type LearnerProfile = {
+  user_id: string;
+  visual_pref: number;
+  text_pref: number;
+  example_pref: number;
+  analogy_pref: number;
+  auditory_pref: number;
+  code_pref: number;
+  current_skill: number;
+  preferred_diff: number;
+  needs_repetition: number;
+  learning_pace: "slow" | "medium" | "fast";
+  onboarding_done: boolean;
+  total_sessions: number;
+  last_topic: string | null;
+  dominant_modality: string;
+};
+
+export const getLearnerProfile = () =>
+  api<LearnerProfile>("/learning/profile");
+
+export type DiagnosticRepresentation = {
+  content?: string;
+  mermaid?: string;
+  quiz?: Partial<QuizQuestion>;
+};
+
+export type DiagnosticTask = {
+  concept: string;
+  representations: {
+    text: DiagnosticRepresentation;
+    diagram: DiagnosticRepresentation;
+    example: DiagnosticRepresentation;
+    analogy: DiagnosticRepresentation;
+    auditory?: DiagnosticRepresentation;
+    code?: DiagnosticRepresentation;
+  };
+};
+
+export type OnboardingStartResponse = {
+  diagnostic_session_id: string;
+  user_topic?: string;
+  concepts?: string[];
+  tasks: DiagnosticTask[];
+};
+
+export const startOnboarding = (user_topic?: string, concepts?: string[]) =>
+  api<OnboardingStartResponse>("/learning/onboarding/start", {
+    method: "POST",
+    body: JSON.stringify({
+      user_topic: user_topic || "machine learning",
+      concepts: concepts ?? undefined,
+    }),
+  });
+
+export type DiagnosticSignal = { score: number; avg_ms: number };
+
+export const submitOnboarding = (body: {
+  diagnostic_session_id: string;
+  signals: Record<string, DiagnosticSignal>;
+}) =>
+  api<{ message: string; profile: LearnerProfile & { dominant_modality: string } }>(
+    "/learning/onboarding/submit",
+    { method: "POST", body: JSON.stringify(body) }
+  );
+
+export type LessonSection = {
+  id: string;
+  type: "text" | "diagram" | "example" | "analogy" | "auditory" | "code";
+  label: string;
+  weight: number;
+  content?: string;
+  diagram_json?: string;
+};
+
+export type AdaptiveLesson = {
+  topic: string;
+  difficulty: number;
+  difficulty_label: string;
+  modality_mix: Record<string, number>;
+  sections: LessonSection[];
+  quiz: QuizQuestion[];
+};
+
+export type LessonGenerateResponse = {
+  session_id: string;
+  plan: Record<string, unknown>;
+  lesson: AdaptiveLesson;
+  profile_snapshot: {
+    visual_pref: number;
+    text_pref: number;
+    example_pref: number;
+    analogy_pref: number;
+    auditory_pref: number;
+    code_pref: number;
+    dominant_modality: string;
+    current_skill: number;
+    learning_pace: string;
+  };
+};
+
+
+export const generateLesson = (topic: string) =>
+  api<LessonGenerateResponse>("/learning/lesson/generate", {
+    method: "POST",
+    body: JSON.stringify({ topic }),
+  });
+
+export type LessonCompletePayload = {
+  session_id: string;
+  topic: string;
+  dominant_modality: string;
+  quiz_score: number;
+  avg_response_ms: number;
+  total_attempts?: number;
+  correct_attempts?: number;
+  modality_scores?: Record<string, number>;
+};
+
+export const completeLesson = (body: LessonCompletePayload) =>
+  api<{ message: string; updated_profile: LearnerProfile; adaptation: Record<string, unknown> }>(
+    "/learning/lesson/complete",
+    { method: "POST", body: JSON.stringify(body) }
+  );
+
+export type SessionSummary = {
+  id: string;
+  topic: string;
+  quiz_score: number | null;
+  avg_response_ms: number | null;
+  dominant_modality: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export const getLessonHistory = () =>
+  api<{ sessions: SessionSummary[] }>("/learning/lesson/history");

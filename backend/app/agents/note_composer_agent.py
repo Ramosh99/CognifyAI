@@ -90,67 +90,48 @@ def _fallback_note_data(concept: str, rag_results: List[dict]) -> Dict[str, Any]
             {
                 "type": "text",
                 "body": (
-                    f"{concept} should be studied as a focused explanatory note rather than a short definition.{cite}"
-                    f"{grounding} Start by identifying what the term means, the context where it appears, and why it matters "
-                    "for learners. A strong note separates definition, causes or mechanisms, examples, consequences, and "
-                    "exam-ready distinctions, so the topic becomes understandable without mixing it with unrelated fields. "
-                    "This also helps the learner notice whether a later diagram or image is genuinely explaining the topic."
+                    f"Here is a brief overview of {concept}.{cite} "
+                    f"{grounding} Understanding this concept involves recognizing its core function and how it fits into the broader subject."
                 ),
             },
             {
                 "type": "text",
                 "heading": "Core Meaning",
                 "body": (
-                    f"The core meaning of {concept} should be stated in plain language first, then refined with technical detail. "
-                    "The learner should be able to answer three questions: what the topic is, what it is not, and what features "
-                    "make it recognizable. When sources are available, the safest approach is to keep the wording close to the "
-                    "source and avoid adding unsupported claims. This makes the note useful for both revision and explanation."
-                    " In an exam answer, this section should usually be short but exact, because unclear definitions often cause "
-                    "the rest of the answer to drift away from the requested topic."
+                    f"At its core, {concept} refers to the primary mechanism or definition identified in the source context. "
+                    "It is essential to grasp this basic definition before exploring complex applications."
                 ),
             },
             {
                 "type": "text",
                 "heading": "Background and Context",
                 "body": (
-                    "Background context explains where the topic belongs in a wider subject area. This section should connect "
-                    "the term to related concepts, common situations, and the vocabulary a student is likely to meet in class "
-                    "or exams. If the topic is sensitive, such as health, law, or finance, the note should describe concepts "
-                    "educationally and avoid presenting itself as personal professional advice. Context also helps separate the "
-                    "topic from similar terms that may sound related but belong to a different explanation."
+                    f"In practice, {concept} does not exist in isolation. It relates to surrounding systems, "
+                    "methodologies, and foundational theories that give it purpose."
                 ),
             },
             {
                 "type": "text",
                 "heading": "Mechanism or Explanation",
                 "body": (
-                    "A useful note should explain the mechanism behind the topic: the process, causes, structure, or chain of "
-                    "events that makes the concept work. For abstract topics, this may be a relationship map. For scientific "
-                    "topics, it may be a pathway, system, or set of contributing factors. This section should avoid vague wording "
-                    "and focus on the specific features that would help a learner recognize the topic in an exam question."
-                    " When a mechanism is uncertain or varies by case, the note should say so rather than forcing a single simple cause."
+                    "The process typically involves a sequence of steps or a specific structural relationship. "
+                    "By following these steps, the overall outcome or effect is achieved."
                 ),
             },
             {
                 "type": "text",
                 "heading": "Examples and Recognition",
                 "body": (
-                    "Examples make the note concrete. They should be chosen because they clarify the definition, not because they "
-                    "are merely interesting. A good example shows how the topic appears in real situations, what signs or features "
-                    "identify it, and how it differs from nearby ideas. This is also where a learner can connect the term to diagrams, "
-                    "case descriptions, historical examples, or practical observations."
-                    " The best examples are specific enough to remember but general enough that they do not become misleading."
+                    "Real-world applications of this concept help ground the theory. Observing it in action "
+                    "clarifies abstract ideas and highlights its practical utility."
                 ),
             },
             {
                 "type": "text",
                 "heading": "Study Takeaway",
                 "body": (
-                    "For revision, compress the topic into a definition, two or three key features, one mechanism, and one example. "
-                    "Then test whether the explanation still makes sense when the headings are hidden. If the topic is high sensitivity, "
-                    "remember that the note is for education only: it should explain concepts accurately, cite sources when possible, "
-                    "and avoid diagnosis, treatment instructions, legal advice, or financial recommendations."
-                    " A good final check is whether every heading, source, image, and diagram still points back to the original topic."
+                    f"To master {concept}, remember its core definition, visualize its mechanism, and connect it "
+                    "to a concrete example. This ensures strong retention and practical understanding."
                 ),
             },
         ],
@@ -331,13 +312,16 @@ def _planned_note_data(
             learner_type=learner_type,
         )
         data = llm_service.parse_json_response(raw)
+        data["is_fallback"] = False
     except Exception:
         data = _fallback_note_data(concept, rag_results)
+        data["is_fallback"] = True
 
     sections = _text_sections(data)
     total_words = sum(len(section.body.split()) for section in sections)
     if len(sections) < 5 or total_words < 450:
         data = _fallback_note_data(concept, rag_results)
+        data["is_fallback"] = True
     return data
 
 
@@ -420,6 +404,14 @@ def compose_note_events(
         learner_type=learner_type,
         rag_results=rag_results,
     )
+    
+    if data.get("is_fallback", False):
+        yield _status(
+            "error",
+            "AI generation encountered an issue. Using standard fallback explanation.",
+            detail="Rate limit or parsing error occurred.",
+        )
+        
     sections = _text_sections(data)
     visual_plan = _clean_visual_plan(data, concept, sections)
     total_visuals = len(visual_plan)

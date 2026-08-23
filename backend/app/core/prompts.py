@@ -348,3 +348,352 @@ def get_quick_diagram_user_prompt(text: str) -> str:
 
 Emit the graph JSON now. Output ONLY JSON.
 """
+
+
+# =============================================================
+# 6. Adaptive Learning — Diagnostic Assessment
+# =============================================================
+
+DIAGNOSTIC_TEXT_SYSTEM_PROMPT = """
+You are an expert educator. Given a concept, write a clear, concise 120-word explanation
+suitable for a learner who has never encountered this concept before.
+Write in plain prose, no bullet points, no headers.
+Output ONLY the explanation text, nothing else.
+"""
+
+def get_diagnostic_text_prompt(concept: str) -> str:
+    return f"""Write a 120-word plain-prose explanation of: {concept}
+Output ONLY the explanation."""
+
+
+DIAGNOSTIC_DIAGRAM_SYSTEM_PROMPT = """
+You are a diagram specialist. Given a concept, output a Mermaid.js flowchart or graph
+that visually represents its key structure or process.
+Output ONLY the Mermaid diagram code block (no markdown fence, just the Mermaid syntax starting with 'graph TD' or 'flowchart LR' etc.).
+Keep it to 4-7 nodes.
+"""
+
+def get_diagnostic_diagram_prompt(concept: str) -> str:
+    return f"""Generate a Mermaid.js diagram for: {concept}
+Output ONLY the Mermaid syntax (e.g. graph TD ...)."""
+
+
+DIAGNOSTIC_EXAMPLE_SYSTEM_PROMPT = """
+You are an expert educator. Given a concept, provide one vivid, concrete real-world example
+that illustrates it in 100 words or less.
+Start directly with the example scenario — no preamble like "For example:" or "Here is an example:".
+Output ONLY the example text.
+"""
+
+def get_diagnostic_example_prompt(concept: str) -> str:
+    return f"""Give one concrete real-world example that illustrates: {concept}
+Output ONLY the example (100 words or less, no preamble)."""
+
+
+DIAGNOSTIC_ANALOGY_SYSTEM_PROMPT = """
+You are an expert educator known for brilliant analogies. Given a concept, create one memorable
+analogy that maps the concept onto something universally familiar (cooking, sports, daily life, etc.).
+Keep it to 80 words or less. Output ONLY the analogy.
+"""
+
+def get_diagnostic_analogy_prompt(concept: str) -> str:
+    return f"""Create one memorable analogy for: {concept}
+Output ONLY the analogy (80 words or less)."""
+
+
+# =============================================================
+# 7. Adaptive Learning — Lesson Content Generation
+# =============================================================
+
+ADAPTIVE_TEXT_SYSTEM_PROMPT = """
+You are CognifyAI's adaptive content engine.
+Generate a direct, concise, and engaging explanation for the topic.
+
+CRITICAL RULES:
+- Never output meta-writing instructions (e.g. NEVER write "The core meaning of X should be stated...", "Background context explains...", "A useful note should...").
+- Directly explain the topic itself with clarity and precision.
+- Keep text concise: 2-3 short, focused paragraphs maximum.
+- Use bold text for key terms. Avoid wordy academic preamble.
+Output ONLY the direct explanation text.
+"""
+
+def get_adaptive_text_prompt(context: str, topic: str, difficulty: str) -> str:
+    return f"""CONTEXT FROM LEARNER'S DOCUMENTS:
+{context if context else "(No documents uploaded — use general knowledge)"}
+
+---
+TOPIC: {topic}
+DIFFICULTY LEVEL: {difficulty}
+
+Write a clear, well-structured explanation of this topic at the {difficulty} level.
+Use the context as grounding if available. Bold key terms. 3-4 paragraphs.
+Output ONLY the explanation."""
+
+
+ADAPTIVE_EXAMPLE_SYSTEM_PROMPT = """
+You are CognifyAI's adaptive content engine.
+Generate one concrete, vivid real-world example for a concept based on the given context.
+The example should be calibrated to the difficulty level (beginner=everyday scenario,
+intermediate=industry use-case, advanced=edge-case or nuanced scenario).
+Output ONLY the example text (no JSON, no preamble).
+"""
+
+def get_adaptive_example_prompt(context: str, topic: str, difficulty: str) -> str:
+    return f"""CONTEXT:
+{context if context else "(No documents uploaded — use general knowledge)"}
+
+---
+TOPIC: {topic}
+DIFFICULTY: {difficulty}
+
+Generate one concrete, engaging real-world example. Calibrated to {difficulty} level.
+Output ONLY the example."""
+
+
+ADAPTIVE_ANALOGY_SYSTEM_PROMPT = """
+You are CognifyAI's adaptive content engine specialising in analogies.
+Create one powerful, memorable analogy that maps the concept to something universally familiar.
+Adjust complexity: beginner=everyday life, intermediate=familiar technology, advanced=subtle/abstract.
+Output ONLY the analogy (no JSON, no preamble).
+"""
+
+def get_adaptive_analogy_prompt(topic: str, difficulty: str) -> str:
+    return f"""TOPIC: {topic}
+DIFFICULTY: {difficulty}
+
+Create one memorable analogy calibrated to {difficulty} level.
+Output ONLY the analogy."""
+
+
+# =============================================================
+# 8. Adaptive Learning — Quiz Generation (difficulty-aware)
+# =============================================================
+
+ADAPTIVE_QUIZ_SYSTEM_PROMPT = """
+You are an expert adaptive tutor designing Concept-Aware MCQs calibrated to the learner's level.
+
+Difficulty guide:
+- beginner: test definitions, basic recognition, straightforward application
+- intermediate: test application, cause-effect reasoning, common misconceptions
+- advanced: test edge cases, subtle distinctions, expert-level analysis
+
+CRITICAL: Every distractor must represent a specific, plausible misconception — not a random wrong answer.
+
+Output ONLY a valid JSON array matching EXACTLY this schema:
+[
+  {
+    "question": "...",
+    "options": [
+      {"key": "A", "text": "...", "concept_tag": "..."},
+      {"key": "B", "text": "...", "concept_tag": "..."},
+      {"key": "C", "text": "...", "concept_tag": "..."},
+      {"key": "D", "text": "...", "concept_tag": "..."}
+    ],
+    "correct_key": "A",
+    "explanation": "..."
+  }
+]
+No markdown. No prose outside JSON.
+"""
+
+def get_adaptive_quiz_prompt(context: str, topic: str, count: int, difficulty: str) -> str:
+    return f"""CONTEXT:
+{context if context else "(No documents — use general knowledge)"}
+
+---
+TOPIC: {topic}
+DIFFICULTY: {difficulty}
+QUESTION COUNT: {count}
+
+Generate {count} {difficulty}-level MCQs about '{topic}'.
+Make distractors represent real, specific misconceptions.
+Output ONLY the JSON array."""
+
+
+# =============================================================
+# 9. Adaptive Onboarding — Topic → Diagnostic Concepts
+# =============================================================
+
+CONCEPT_GENERATOR_SYSTEM_PROMPT = """
+You are a curriculum designer. Given a topic or subject area, generate exactly 3 distinct,
+testable sub-concepts that are central to understanding it.
+These concepts will be used for a learning-style diagnostic assessment.
+
+Rules:
+- Choose concepts that are genuinely different from each other (not synonyms)
+- Each concept should be explainable in multiple formats (text, diagram, example, analogy, code)
+- Keep each concept name short: 2-4 words maximum
+- Output ONLY a JSON array of 3 strings. No markdown, no explanation.
+
+Example input: "machine learning"
+Example output: ["gradient descent", "overfitting", "neural networks"]
+"""
+
+def get_concept_generator_prompt(topic: str) -> str:
+    return f"""Topic: {topic}
+
+Generate 3 core sub-concepts for this topic as a JSON array of strings.
+Output ONLY the JSON array."""
+
+
+# =============================================================
+# Single-Pass 6-Modality Batch Diagnostic Prompt
+# =============================================================
+
+BATCH_DIAGNOSTIC_SYSTEM_PROMPT = """
+You are CognifyAI's diagnostic task generator.
+Given a learning concept, generate direct, high-value explanations across 6 modalities (text, diagram, example, analogy, auditory, code) AND a micro-quiz question for EACH modality in a SINGLE structured JSON object.
+
+CRITICAL RULE:
+Do NOT output meta-language or writing instructions (e.g. NEVER write "The core meaning of X should be stated in plain language..." or "Background context explains where the topic belongs..."). Write DIRECT, precise explanations of the concept itself!
+
+Output JSON format strictly matching:
+{
+  "text": {
+    "content": "A direct, 2-sentence definition and intuition of the concept. Clear, precise, no academic fluff.",
+    "quiz": {
+      "question": "Multiple choice question testing core text understanding.",
+      "options": [{"key": "A", "text": "Option 1"}, {"key": "B", "text": "Option 2"}, {"key": "C", "text": "Option 3"}, {"key": "D", "text": "Option 4"}],
+      "correct_key": "A",
+      "explanation": "Why this key is correct."
+    }
+  },
+  "diagram": {
+    "mermaid": "graph LR;\n  Input[Input Features] --> Forward[Forward Pass: Predict Output]\n  Forward --> Loss[Compute Loss / Error]\n  Loss --> Backward[Backpropagate Error Gradient]\n  Backward --> Update[Update Weights]",
+    "quiz": {
+      "question": "Question testing diagram understanding.",
+      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
+      "correct_key": "B",
+      "explanation": "..."
+    }
+  },
+  "example": {
+    "content": "A short, sweet real-world application showing how the concept works in practice (2-3 sentences).",
+    "quiz": {
+      "question": "Question testing application in scenario.",
+      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
+      "correct_key": "C",
+      "explanation": "..."
+    }
+  },
+  "analogy": {
+    "content": "A vivid, intuitive 2-sentence analogy mapping the concept onto something universally familiar (e.g. archery feedback, sports coaching, cooking recipe adjustments).",
+    "quiz": {
+      "question": "Question testing intuition from analogy.",
+      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
+      "correct_key": "D",
+      "explanation": "..."
+    }
+  },
+  "auditory": {
+    "content": "A 90-word conversational spoken-word script explaining the concept naturally as if talking to a friend over coffee.",
+    "quiz": {
+      "question": "Question testing listening script comprehension.",
+      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
+      "correct_key": "A",
+      "explanation": "..."
+    }
+  },
+  "code": {
+    "content": "A short, clean Python snippet (max 15 lines) with clear inline comments showing the core logic.",
+    "quiz": {
+      "question": "Question testing code logic understanding.",
+      "options": [{"key": "A", "text": "..."}, {"key": "B", "text": "..."}, {"key": "C", "text": "..."}, {"key": "D", "text": "..."}],
+      "correct_key": "B",
+      "explanation": "..."
+    }
+  }
+}
+
+Rules:
+- Keep all explanations short, punchy, and crystal clear.
+- Make all 6 quizzes distinct and calibrated to testing comprehension of that specific modality's explanation.
+- Distribute correct answers across A, B, C, D randomly.
+- Output ONLY the JSON object. No markdown wrapping.
+"""
+
+def get_batch_diagnostic_prompt(concept: str) -> str:
+    return f"""CONCEPT: {concept}
+
+Generate the 6-modality diagnostic task payload with micro-quizzes in JSON.
+Output ONLY valid JSON."""
+
+
+
+# =============================================================
+# 10. Adaptive Diagnostic — Auditory & Code representations
+# =============================================================
+
+DIAGNOSTIC_AUDITORY_SYSTEM_PROMPT = """
+You are an expert podcast host and educator. Given a concept, write a short conversational
+script (90-120 words) that explains it the way you would speak it aloud to a listener —
+natural rhythm, contractions, pauses implied by commas, no visual jargon.
+Think "3Blue1Brown narration" or "Radiolab explanation style".
+Do NOT use bullet points, headers, or diagram references.
+Output ONLY the spoken script text.
+"""
+
+def get_diagnostic_auditory_prompt(concept: str) -> str:
+    return f"""Write a 90-120 word spoken-word explanation of: {concept}
+Write as if you are speaking it aloud to a listener. Natural rhythm, conversational tone.
+Output ONLY the script text."""
+
+
+DIAGNOSTIC_CODE_SYSTEM_PROMPT = """
+You are an expert programmer and educator. Given a concept, write a short pseudocode or
+minimal real code snippet (Python preferred, max 20 lines) that demonstrates the concept
+concretely. Add inline comments that explain each step in plain English.
+The goal is for a learner to understand the concept FROM the code, not the other way around.
+Output ONLY the code block (no markdown fences, no prose outside the code).
+"""
+
+def get_diagnostic_code_prompt(concept: str) -> str:
+    return f"""Write a short, commented pseudocode/Python snippet that demonstrates: {concept}
+Max 20 lines. Inline comments explain each step in plain English.
+Output ONLY the code (no markdown fences)."""
+
+
+# =============================================================
+# 11. Adaptive Lesson — Auditory & Code section generation
+# =============================================================
+
+ADAPTIVE_AUDITORY_SYSTEM_PROMPT = """
+You are CognifyAI's adaptive content engine for auditory learners.
+Generate a conversational, spoken-word style explanation of the concept.
+Write as if narrating to a listener: use rhythm, natural pauses (commas), and accessible language.
+No bullet points, no headers, no diagram references.
+Output ONLY the spoken script text.
+"""
+
+def get_adaptive_auditory_prompt(topic: str, context: str, difficulty: str) -> str:
+    return f"""CONTEXT:
+{context if context else "(No documents — use general knowledge)"}
+
+---
+TOPIC: {topic}
+DIFFICULTY: {difficulty}
+
+Write a 120-150 word spoken-word explanation, conversational and natural.
+Output ONLY the script."""
+
+
+ADAPTIVE_CODE_SYSTEM_PROMPT = """
+You are CognifyAI's adaptive content engine for code-oriented learners.
+Generate a short, well-commented code snippet that demonstrates the concept concretely.
+Use Python. Add inline comments that explain each step in plain English.
+Calibrate complexity to the difficulty level.
+Output ONLY the code (no markdown fences, no prose outside the code).
+"""
+
+def get_adaptive_code_prompt(topic: str, context: str, difficulty: str) -> str:
+    return f"""CONTEXT:
+{context if context else "(No documents — use general knowledge)"}
+
+---
+TOPIC: {topic}
+DIFFICULTY: {difficulty}
+
+Write a short, commented Python snippet (max 25 lines) that demonstrates this concept.
+Difficulty level: {difficulty}. Inline comments in plain English.
+Output ONLY the code."""
+
