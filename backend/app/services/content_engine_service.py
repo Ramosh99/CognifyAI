@@ -42,7 +42,8 @@ def clean_mermaid(raw: str, concept: str = "Concept") -> str:
     # Ensure it starts with valid directive
     valid_directives = ("graph", "flowchart", "sequencediagram", "classdiagram", "gantt", "pie", "mindmap")
     if not any(cleaned.lower().startswith(d) for d in valid_directives):
-        cleaned = f"graph TD;\n  A[\"{concept}\"] --> B[\"{cleaned[:40].replace('\"', '\'')}\"]"
+        truncated = cleaned[:40].replace('"', "'")
+        cleaned = f"graph TD;\n  A[\"{concept}\"] --> B[\"{truncated}\"]"
     return cleaned
 
 
