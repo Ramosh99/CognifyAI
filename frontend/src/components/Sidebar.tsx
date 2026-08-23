@@ -6,14 +6,19 @@ import { useEffect, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 
 const NAV = [
-  { href: "/dashboard",          label: "Overview",      icon: "overview" },
-  { href: "/dashboard/chat",     label: "Chat",          icon: "chat" },
-  { href: "/dashboard/visual",   label: "Visual Explain", icon: "visual" },
-  { href: "/dashboard/auditory", label: "Auditory Tutor", icon: "auditory" },
-  { href: "/dashboard/upload",   label: "Upload",        icon: "upload" },
-  { href: "/dashboard/quiz",     label: "Quiz",          icon: "quiz" },
-  { href: "/dashboard/search",   label: "Search",        icon: "search" },
-  { href: "/dashboard/analytics",label: "Analytics",     icon: "analytics" },
+  { href: "/dashboard",              label: "Overview",       icon: "overview" },
+  // ── Adaptive Learning ──
+  { href: "/dashboard/learn",        label: "Adaptive Learn",  icon: "learn" },
+  { href: "/dashboard/onboarding",   label: "Assessment",      icon: "assessment" },
+  { href: "/dashboard/profile",      label: "My Profile",      icon: "profile" },
+  // ── Legacy tools ──
+  { href: "/dashboard/chat",         label: "Chat",            icon: "chat" },
+  { href: "/dashboard/visual",       label: "Visual Explain",  icon: "visual" },
+  { href: "/dashboard/auditory",     label: "Auditory Tutor",  icon: "auditory" },
+  { href: "/dashboard/upload",       label: "Upload",          icon: "upload" },
+  { href: "/dashboard/quiz",         label: "Quiz",            icon: "quiz" },
+  { href: "/dashboard/search",       label: "Search",          icon: "search" },
+  { href: "/dashboard/analytics",    label: "Analytics",       icon: "analytics" },
 ];
 
 function NavIcon({ type, active }: { type: string; active: boolean }) {
@@ -21,6 +26,11 @@ function NavIcon({ type, active }: { type: string; active: boolean }) {
   const s = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: color, strokeWidth: 1.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (type) {
     case "overview": return <svg {...s}><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>;
+    // Adaptive learning icons
+    case "learn": return <svg {...s}><path d="M8 2L2 6v8l6 2 6-2V6L8 2z"/><path d="M8 2v14"/><path d="M2 6l6 2 6-2"/></svg>;
+    case "assessment": return <svg {...s}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5 8l2 2 4-4"/></svg>;
+    case "profile": return <svg {...s}><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>;
+    // Legacy
     case "chat": return <svg {...s}><path d="M3 3h10a1 1 0 011 1v7a1 1 0 01-1 1H5l-3 3V4a1 1 0 011-1z"/></svg>;
     case "visual": return <svg {...s}><circle cx="8" cy="8" r="5"/><path d="M8 5v6M5 8h6"/></svg>;
     case "auditory": return <svg {...s}><path d="M8 2a3 3 0 00-3 3v4a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M4 9a4 4 0 008 0M8 13v2"/></svg>;
