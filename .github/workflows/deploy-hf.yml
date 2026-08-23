@@ -30,9 +30,21 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Create a clean single-commit push (no history = no binary blobs)
+          # Remove existing git history completely to avoid shallow update rejection
+          # and ensure absolutely no historical binary blobs are pushed.
+          rm -rf .git
+          
+          # Initialize a fresh git repository
+          git init
+          git checkout -b main
+          
+          # Configure identity for this new local repo
+          git config user.email "ci@cognifyai.app"
+          git config user.name "CognifyAI CI"
+          
+          # Add current state and commit
           git add -A
-          git diff --cached --quiet || git commit -m "ci: deploy from GitHub @ ${{ github.sha }}"
+          git commit -m "ci: deploy from GitHub @ ${{ github.sha }}"
 
           # Force push to HF main — this replaces HF's history entirely
-          git push https://Ramosh99:${HF_TOKEN}@huggingface.co/spaces/Ramosh99/cognify HEAD:main --force
+          git push https://Ramosh99:${HF_TOKEN}@huggingface.co/spaces/Ramosh99/cognify main --force
