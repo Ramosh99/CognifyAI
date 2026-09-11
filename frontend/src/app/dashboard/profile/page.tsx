@@ -75,10 +75,9 @@ export default function ProfilePage() {
           {[
             { key: "visual_pref", label: "Visual", icon: "📊", color: "#8b5cf6", value: profile.visual_pref ?? 0.5 },
             { key: "text_pref", label: "Text", icon: "📝", color: "#06b6d4", value: profile.text_pref ?? 0.5 },
-            { key: "example_pref", label: "Example", icon: "🔬", color: "#10b981", value: profile.example_pref ?? 0.5 },
+            { key: "example_pref", label: "Applied", icon: "🔬", color: "#10b981", value: profile.example_pref ?? 0.5 },
             { key: "analogy_pref", label: "Analogy", icon: "💡", color: "#f59e0b", value: profile.analogy_pref ?? 0.5 },
-            { key: "auditory_pref", label: "Auditory Script", icon: "🎙️", color: "#ec4899", value: profile.auditory_pref ?? 0.5 },
-            { key: "code_pref", label: "Implementation Code", icon: "💻", color: "#3b82f6", value: profile.code_pref ?? 0.5 },
+            { key: "auditory_pref", label: "Auditory", icon: "🎙️", color: "#ec4899", value: profile.auditory_pref ?? 0.5 },
           ].map((item) => (
             <div key={item.key} style={{ background: "var(--bg-card)", padding: "1.25rem" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>

@@ -102,6 +102,18 @@ class ContentEngineService:
         combined_context = "\n\n---\n\n".join(context_chunks) if context_chunks else ""
         difficulty_label = self._difficulty_label(difficulty)
 
+        # ── Retrieve learner profile weights for prompt calibration ──
+        learner_context = ""
+        try:
+            from app.services.learner_profile_service import learner_profile_service
+            prof = learner_profile_service.get_or_create(user_id)
+            learner_context = prompts.build_learner_context_block(
+                weight_string=prof.to_weight_string(),
+                pace=prof.learning_pace,
+            )
+        except Exception as e:
+            print(f"[ContentEngine] Could not load profile for learner context: {e}")
+
         # ── Generate each content section ──
         rendered_sections: List[Dict[str, Any]] = []
         for sec in sections_plan:
@@ -111,6 +123,7 @@ class ContentEngineService:
                 topic=topic,
                 context=combined_context,
                 difficulty_label=difficulty_label,
+                learner_context=learner_context,
             )
             rendered_sections.append({
                 "id": str(uuid.uuid4())[:8],
@@ -232,10 +245,13 @@ class ContentEngineService:
         topic: str,
         context: str,
         difficulty_label: str,
+        learner_context: str = "",
     ) -> Dict[str, Any]:
+        prefix = f"{learner_context}\n\n" if learner_context else ""
+
         if modality == "text":
             content = llm_service._call_llm(
-                system_prompt=prompts.ADAPTIVE_TEXT_SYSTEM_PROMPT,
+                system_prompt=prefix + prompts.ADAPTIVE_TEXT_SYSTEM_PROMPT,
                 user_prompt=prompts.get_adaptive_text_prompt(context, topic, difficulty_label),
                 temperature=0.35, max_tokens=600,
             )
@@ -251,10 +267,9 @@ class ContentEngineService:
             clean_diag = clean_mermaid(raw, topic)
             return {"diagram_json": clean_diag, "content": clean_diag}
 
-
         elif modality == "example":
             content = llm_service._call_llm(
-                system_prompt=prompts.ADAPTIVE_EXAMPLE_SYSTEM_PROMPT,
+                system_prompt=prefix + prompts.ADAPTIVE_EXAMPLE_SYSTEM_PROMPT,
                 user_prompt=prompts.get_adaptive_example_prompt(context, topic, difficulty_label),
                 temperature=0.4, max_tokens=400,
             )
@@ -262,7 +277,7 @@ class ContentEngineService:
 
         elif modality == "analogy":
             content = llm_service._call_llm(
-                system_prompt=prompts.ADAPTIVE_ANALOGY_SYSTEM_PROMPT,
+                system_prompt=prefix + prompts.ADAPTIVE_ANALOGY_SYSTEM_PROMPT,
                 user_prompt=prompts.get_adaptive_analogy_prompt(topic, difficulty_label),
                 temperature=0.5, max_tokens=300,
             )
@@ -270,21 +285,14 @@ class ContentEngineService:
 
         elif modality == "auditory":
             content = llm_service._call_llm(
-                system_prompt=prompts.ADAPTIVE_AUDITORY_SYSTEM_PROMPT,
+                system_prompt=prefix + prompts.ADAPTIVE_AUDITORY_SYSTEM_PROMPT,
                 user_prompt=prompts.get_adaptive_auditory_prompt(topic, context, difficulty_label),
                 temperature=0.45, max_tokens=350,
             )
             return {"content": content}
 
-        elif modality == "code":
-            content = llm_service._call_llm(
-                system_prompt=prompts.ADAPTIVE_CODE_SYSTEM_PROMPT,
-                user_prompt=prompts.get_adaptive_code_prompt(topic, context, difficulty_label),
-                temperature=0.2, max_tokens=500,
-            )
-            return {"content": content}
-
         return {"content": ""}
+
 
     def _generate_quiz(
         self,

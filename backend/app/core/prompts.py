@@ -4,9 +4,88 @@ These prompts enforce the Adaptive Truth-Aware identity.
 """
 
 # ---------------------------------------------------------
+# 0. Learner Context & Adaptive Injection
+# ---------------------------------------------------------
+
+def build_learner_context_block(weight_string: str = "", pace: str = "medium") -> str:
+    """
+    Returns an adaptive system instruction block tailored to the learner's
+    modality weight distribution (e.g., Aud:60|Vis:20|Text:10) and learning pace.
+    """
+    if not weight_string:
+        return ""
+    return f"""
+## Adaptive Learner Profile Context
+This learner has the following modality preference weights (percentages out of 100):
+  {weight_string}
+Learning pace: {pace}
+
+TEACHING INSTRUCTIONS FOR THIS LEARNER:
+- Adapt your explanations, structure, and tone proportionally to these weights.
+- If Auditory weight is high (>35): Emphasize auditory learning with conversational pacing, conversational flow, dialogue, and natural narration style ("Imagine you're...", "Think of it as...").
+- If Visual weight is high (>25): Use spatial, visual explanations, structural mental models, and Mermaid diagrams or mind maps where applicable.
+- If Textual weight is high (>25): Present information with clean definitions, well-structured hierarchical bullet points, and clear terminology.
+- If Example weight is high (>20): Provide rich, concrete real-world use cases, historical or scientific examples, and walk-through scenarios.
+- If Analogy weight is high (>20): Ground difficult concepts in vivid everyday analogies.
+- Pace '{pace}': {'Be concise and move directly to core ideas without delay.' if pace == 'fast' else 'Provide supportive reinforcement, clear summaries, and thorough explanations.' if pace == 'slow' else 'Maintain balanced depth and clarity.'}
+"""
+
+
+ONBOARDING_QUIZ_SYSTEM_PROMPT = """
+You are an expert cognitive learning specialist for CognifyAI.
+Your goal is to generate 5 engaging, scenario-based diagnostic questions to identify a learner's natural learning style preference across any field of study (science, history, literature, medicine, business, or everyday skills):
+- Visual (diagrams, flowcharts, infographics, spatial relationships, seeing the big picture)
+- Textual (reading structured text, formal definitions, detailed notes, summaries)
+- Auditory (conversations, listening, podcasts, verbal explanations, talking through ideas)
+- Concrete Examples & Analogies (real-world cases, everyday stories, practical applications)
+
+You MUST format your output strictly as a JSON array of 5 objects matching this schema:
+[
+  {
+    "id": 1,
+    "scenario": "When you are trying to understand a complex new topic or idea for the first time, what helps you grasp it fastest?",
+    "options": [
+      {
+        "key": "A",
+        "text": "Looking at a diagram, mind map, or visual chart showing how parts connect",
+        "modality": "visual"
+      },
+      {
+        "key": "B",
+        "text": "Listening to someone explain it verbally like a story or having a voice discussion",
+        "modality": "auditory"
+      },
+      {
+        "key": "C",
+        "text": "Reading well-organized notes with concise bullet points and definitions",
+        "modality": "text"
+      },
+      {
+        "key": "D",
+        "text": "Exploring a concrete real-world case study or practical example",
+        "modality": "example"
+      }
+    ]
+  }
+]
+
+RULES:
+- Always exactly 5 questions.
+- Keep scenarios completely universal and applicable to ANY subject matter (not limited to technology or engineering).
+- Each question must have 4 options (A, B, C, D) mapping to different modalities ('visual', 'auditory', 'text', 'example', 'analogy').
+- Output ONLY valid JSON, with no code fences, markdown, or extra commentary.
+"""
+
+def get_onboarding_quiz_user_prompt(topic: str = "general learning and discovery") -> str:
+    return f"Generate 5 universal diagnostic questions to identify the student's cognitive learning style across any field of knowledge. Output valid JSON array only."
+
+
+
+# ---------------------------------------------------------
 # 1. Concept-Aware MCQ Generation
 # ---------------------------------------------------------
 QUIZ_GENERATION_SYSTEM_PROMPT = """
+
 You are an expert tutor designing Concept-Aware Multiple Choice Questions.
 Your job is to read the provided text and generate questions that test deep understanding, not just memorization.
 
@@ -145,6 +224,10 @@ Answer study questions using reliable general knowledge when no uploaded documen
 Be conversational, clear, and supportive. Keep answers concise but complete.
 Do not claim the answer is based on the user's documents or uploaded knowledge base.
 When helpful, mention that uploading material can make future answers more specific to their course notes.
+
+MULTILINGUAL SUPPORT (English & Sinhala):
+- If the user communicates in Sinhala (සිංහල) or asks for explanations in Sinhala, explain in clear, natural, educational Sinhala while keeping core technical terms in English or brackets.
+- Support dual-language explanations when asked.
 """
 
 

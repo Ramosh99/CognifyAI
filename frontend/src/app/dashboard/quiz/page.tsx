@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
-import { generateQuiz, analyzeAnswer, QuizQuestion } from "@/lib/api";
+import { useState, useRef, useEffect } from "react";
+import { generateQuiz, analyzeAnswer, completeLesson, QuizQuestion } from "@/lib/api";
 
-type LearnerType = "Visual" | "Textual" | "Auditory";
+type LearnerType = "Visual" | "Textual" | "Auditory" | "Applied";
 type AnswerMap   = Record<number, string>;
 type FeedbackMap = Record<number, string>;
 
@@ -10,6 +10,7 @@ const LEARNER_TYPES: { type: LearnerType; desc: string }[] = [
   { type: "Visual",   desc: "Diagrams, analogies & visual structure" },
   { type: "Textual",  desc: "Clear written explanations & definitions" },
   { type: "Auditory", desc: "Conversational, dialogue & audio-friendly tone" },
+  { type: "Applied",  desc: "Scenario-based problems & real-world decisions" },
 ];
 
 export default function QuizPage() {
@@ -22,10 +23,21 @@ export default function QuizPage() {
   const [answers, setAnswers]         = useState<AnswerMap>({});
   const [feedbacks, setFeedbacks]     = useState<FeedbackMap>({});
   const [analyzing, setAnalyzing]     = useState<number | null>(null);
+  const [adaptiveFeedback, setAdaptiveFeedback] = useState<{ message: string; adaptation?: Record<string, unknown> } | null>(null);
+  const quizStartTimeRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get("topic");
+      if (t) setTopic(t);
+    }
+  }, []);
 
   const startQuiz = async () => {
     if (!topic.trim()) { setError("Please enter a topic."); return; }
-    setLoading(true); setError(""); setQuestions([]); setAnswers({}); setFeedbacks({});
+    setLoading(true); setError(""); setQuestions([]); setAnswers({}); setFeedbacks({}); setAdaptiveFeedback(null);
+    quizStartTimeRef.current = Date.now();
     try {
       const res = await generateQuiz({ topic, learner_type: learnerType, question_count: qCount });
       const qs  = Array.isArray(res.questions) ? res.questions : [];
@@ -40,7 +52,9 @@ export default function QuizPage() {
 
   const pickAnswer = async (qi: number, key: string) => {
     if (answers[qi]) return;
-    setAnswers((prev) => ({ ...prev, [qi]: key }));
+    const nextAnswers = { ...answers, [qi]: key };
+    setAnswers(nextAnswers);
+
     const q = questions[qi];
     if (key !== q.correct_key) {
       setAnalyzing(qi);
@@ -60,6 +74,37 @@ export default function QuizPage() {
         setAnalyzing(null);
       }
     }
+
+    // When all questions have been answered, close the adaptation loop!
+    if (Object.keys(nextAnswers).length === questions.length) {
+      const correctCount = Object.entries(nextAnswers).filter(
+        ([idx, ansKey]) => questions[Number(idx)]?.correct_key === ansKey
+      ).length;
+      const scoreRatio = correctCount / questions.length;
+      const avgMs = Math.round((Date.now() - quizStartTimeRef.current) / questions.length);
+      const domModality =
+        learnerType.toLowerCase() === "textual"
+          ? "text"
+          : learnerType.toLowerCase() === "applied"
+          ? "example"
+          : learnerType.toLowerCase();
+
+      completeLesson({
+        session_id: crypto.randomUUID(),
+        topic,
+        dominant_modality: domModality,
+        quiz_score: scoreRatio,
+        avg_response_ms: avgMs,
+        total_attempts: questions.length,
+        correct_attempts: correctCount,
+      })
+        .then((res) => {
+          setAdaptiveFeedback({ message: res.message, adaptation: res.adaptation });
+        })
+        .catch(() => {
+          // Non-blocking if offline or failed
+        });
+    }
   };
 
   const score = Object.entries(answers).filter(([qi, key]) => questions[Number(qi)]?.correct_key === key).length;
@@ -77,7 +122,7 @@ export default function QuizPage() {
           {/* Learner Type */}
           <div>
             <h3 style={{ marginBottom: "0.6rem", fontSize: "0.9rem" }}>Learner type</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.6rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.6rem" }}>
               {LEARNER_TYPES.map((l) => (
                 <div
                   key={l.type}
@@ -139,6 +184,22 @@ export default function QuizPage() {
             </div>
           )}
 
+          {adaptiveFeedback && (
+            <div className="feedback-box success fade-up" style={{ marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <span style={{ fontSize: "1.4rem" }}>🧠</span>
+              <div>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "var(--text-primary)" }}>
+                  Learner Profile Adapted &amp; Synchronized
+                </p>
+                <p style={{ margin: "0.15rem 0 0 0", fontSize: "0.76rem", color: "var(--text-secondary)" }}>
+                  {adaptiveFeedback.adaptation
+                    ? `Pace: ${adaptiveFeedback.adaptation.pace} · Modality ${adaptiveFeedback.adaptation.modality_reinforced} reinforced`
+                    : "Your cognitive profile has updated based on your answers."}
+                </p>
+              </div>
+            </div>
+          )}
+
           {questions.map((q, qi) => {
             const picked  = answers[qi];
             const isMissed = picked && picked !== q.correct_key;
@@ -177,7 +238,7 @@ export default function QuizPage() {
                   <div style={{ marginTop: "0.85rem" }}>
                     {analyzing === qi ? (
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.82rem" }}>
-                        <span className="spinner" /> Analyzing...
+                        <span className="spinner" /> Analyzing misconception...
                       </div>
                     ) : feedbacks[qi] ? (
                       <div className="feedback-box error fade-up">
@@ -200,7 +261,7 @@ export default function QuizPage() {
             );
           })}
 
-          <button className="btn btn-outline" onClick={() => { setQuestions([]); setAnswers({}); setFeedbacks({}); }}>
+          <button className="btn btn-outline" onClick={() => { setQuestions([]); setAnswers({}); setFeedbacks({}); setAdaptiveFeedback(null); }}>
             ← Try Another Topic
           </button>
         </div>

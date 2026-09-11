@@ -71,6 +71,9 @@ export async function ingestFile(file: File, topic?: string): Promise<IngestResp
 export const searchDocuments = (body: { query: string; top_k?: number; filter_topic?: string | null }) =>
   api<SearchResponse>("/documents/search", { method: "POST", body: JSON.stringify(body) });
 
+export type DocumentStatsResponse = { document_count: number; chunk_count: number };
+export const getDocumentStats = () => api<DocumentStatsResponse>("/documents/stats");
+
 // ── Learning ───────────────────────────────────────────
 
 export type MCQOption = { key: string; text: string; concept_tag?: string };
@@ -520,7 +523,71 @@ export const submitOnboarding = (body: {
     { method: "POST", body: JSON.stringify(body) }
   );
 
+// ── Adaptive Onboarding Flow (CognifyAI Workflow) ────────────
+
+export type LearnerWeightsResponse = {
+  user_id: string;
+  weights: Record<string, number>;
+  weight_string: string;
+  dominant_modality: string;
+  learning_pace: string;
+  onboarding_done: boolean;
+  total_sessions: number;
+  guideline: {
+    headline: string;
+    focus_description: string;
+    support_description: string;
+    less_focus: string;
+  };
+};
+
+export type OnboardingQuestion = {
+  id: number;
+  scenario: string;
+  options: {
+    key: string;
+    text: string;
+    modality: string;
+  }[];
+};
+
+export const getLearnerWeights = () =>
+  api<LearnerWeightsResponse>("/learning/profile/weights");
+
+export const getOnboardingQuestions = (topic?: string) =>
+  api<{ questions: OnboardingQuestion[] }>(
+    `/learning/onboarding/questions${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`
+  );
+
+export const classifyOnboarding = (body: {
+  answers: {
+    question_id: number;
+    selected_key: string;
+    modality: string;
+    response_ms: number;
+  }[];
+  preferred_topic?: string;
+  voice_pref_selected?: boolean;
+  chosen_mode?: string;
+}) =>
+  api<{
+    message: string;
+    profile: LearnerProfile;
+    dominant_modality: string;
+    weights: Record<string, number>;
+    weight_string: string;
+    delivery_plan: {
+      primary: string;
+      secondary: string;
+      prompt_injection: string;
+    };
+  }>("/learning/onboarding/classify", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 export type LessonSection = {
+
   id: string;
   type: "text" | "diagram" | "example" | "analogy" | "auditory" | "code";
   label: string;
@@ -591,3 +658,22 @@ export type SessionSummary = {
 
 export const getLessonHistory = () =>
   api<{ sessions: SessionSummary[] }>("/learning/lesson/history");
+
+export type MisconceptionStat = {
+  tag: string;
+  count: number;
+  example_topic: string;
+};
+
+export type EvaluationMetricsResponse = {
+  faithfulness_score: number;
+  hallucination_rate: number;
+  grounded_answers_count: number;
+  total_queries_evaluated: number;
+  retrieval_hit_rate: number;
+  top_misconceptions: MisconceptionStat[];
+  confidence_distribution: Record<string, number>;
+};
+
+export const getEvaluationMetrics = () =>
+  api<EvaluationMetricsResponse>("/learning/analytics/evaluation");
