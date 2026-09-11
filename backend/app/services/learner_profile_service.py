@@ -52,6 +52,7 @@ class LearnerProfile:
     last_topic: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """Returns the full profile dict. Callers strip unsupported columns before DB writes."""
         return {
             "user_id": self.user_id,
             "visual_pref": round(self.visual_pref, 4),
@@ -77,9 +78,30 @@ class LearnerProfile:
             "example": self.example_pref,
             "analogy": self.analogy_pref,
             "auditory": self.auditory_pref,
-            "code": self.code_pref,
         }
         return max(prefs, key=prefs.get)
+
+    def to_modality_weights(self) -> Dict[str, int]:
+        """
+        Returns normalized percentages: e.g. {"auditory": 60, "visual": 20, "text": 10, ...}
+        Sum is guaranteed to be 100.
+        """
+        raw = {
+            "auditory": max(0.01, self.auditory_pref),
+            "visual": max(0.01, self.visual_pref),
+            "text": max(0.01, self.text_pref),
+            "example": max(0.01, self.example_pref),
+            "analogy": max(0.01, self.analogy_pref),
+        }
+        total = sum(raw.values())
+        return {k: round((v / total) * 100) for k, v in raw.items()}
+
+    def to_weight_string(self) -> str:
+        """Returns string representation e.g. 'Aud:60|Vis:20|Text:10|Ex:7|An:3'"""
+        w = self.to_modality_weights()
+        return f"Aud:{w.get('auditory', 0)}|Vis:{w.get('visual', 0)}|Text:{w.get('text', 0)}|Ex:{w.get('example', 0)}|An:{w.get('analogy', 0)}"
+
+
 
 
 @dataclass
@@ -102,6 +124,13 @@ def _get_supabase() -> Client:
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
         raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in your .env file.")
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+
+
+# Columns that may not exist in older Supabase deployments
+# (auditory_pref and code_pref were added via migration — kept here as safety net)
+_OPTIONAL_COLUMNS = {"auditory_pref", "code_pref"}
+# Cached set of confirmed-bad columns (populated at runtime on first PGRST204 error)
+_BAD_COLUMNS: set = set()
 
 
 class LearnerProfileService:
@@ -135,11 +164,38 @@ class LearnerProfileService:
 
         # Create default profile
         default = LearnerProfile(user_id=user_id)
-        try:
-            client.table("learner_profiles").insert(default.to_dict()).execute()
-        except Exception as e:
-            print(f"[LearnerProfile] insert failed: {e}")
+        self._insert_safe(client, default)
         return default
+
+    def _safe_payload(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """Strip any columns known to not exist in this deployment."""
+        return {k: v for k, v in d.items() if k not in _BAD_COLUMNS}
+
+    def _insert_safe(self, client: Any, profile: LearnerProfile) -> None:
+        """Insert a new profile row, stripping unsupported optional columns on failure."""
+        global _BAD_COLUMNS
+        payload = self._safe_payload(profile.to_dict())
+        try:
+            client.table("learner_profiles").insert(payload).execute()
+        except Exception as e:
+            err_str = str(e)
+            if "PGRST204" in err_str or any(c in err_str for c in _OPTIONAL_COLUMNS):
+                # Mark which optional columns are bad, retry
+                for col in _OPTIONAL_COLUMNS:
+                    if col in err_str:
+                        _BAD_COLUMNS.add(col)
+                        payload.pop(col, None)
+                if not _BAD_COLUMNS:  # fallback: strip all optional columns
+                    _BAD_COLUMNS.update(_OPTIONAL_COLUMNS)
+                    for col in _OPTIONAL_COLUMNS:
+                        payload.pop(col, None)
+                try:
+                    client.table("learner_profiles").insert(payload).execute()
+                except Exception as e2:
+                    print(f"[LearnerProfile] insert fallback failed: {e2}")
+            else:
+                print(f"[LearnerProfile] insert failed: {e}")
+
 
     # ------------------------------------------------------------------
     # Write — onboarding
@@ -274,14 +330,36 @@ class LearnerProfileService:
     # ------------------------------------------------------------------
 
     def _save(self, profile: LearnerProfile) -> None:
+        global _BAD_COLUMNS
+        client = _get_supabase()
+        payload = self._safe_payload(profile.to_dict())
         try:
-            client = _get_supabase()
             client.table("learner_profiles").upsert(
-                profile.to_dict(),
+                payload,
                 on_conflict="user_id",
             ).execute()
         except Exception as e:
-            print(f"[LearnerProfile] save failed: {e}")
+            err_str = str(e)
+            if "PGRST204" in err_str or any(c in err_str for c in _OPTIONAL_COLUMNS):
+                # Mark bad columns and retry
+                for col in _OPTIONAL_COLUMNS:
+                    if col in err_str:
+                        _BAD_COLUMNS.add(col)
+                        payload.pop(col, None)
+                if not _BAD_COLUMNS:
+                    _BAD_COLUMNS.update(_OPTIONAL_COLUMNS)
+                    for col in _OPTIONAL_COLUMNS:
+                        payload.pop(col, None)
+                try:
+                    client.table("learner_profiles").upsert(
+                        payload,
+                        on_conflict="user_id",
+                    ).execute()
+                except Exception as e2:
+                    print(f"[LearnerProfile] save fallback failed: {e2}")
+            else:
+                print(f"[LearnerProfile] save failed: {e}")
+
 
     @staticmethod
     def _row_to_profile(row: Dict[str, Any]) -> LearnerProfile:

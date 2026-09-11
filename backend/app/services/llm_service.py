@@ -190,7 +190,85 @@ class LLMService:
             print(f"Failed to parse LLM JSON: {raw_response}")
             return normalize_quiz([], topic, count)
 
+    def generate_onboarding_quiz(
+        self,
+        topic: str = "general learning and discovery",
+    ) -> List[Dict[str, Any]]:
+        """
+        Generates 5 scenario-based questions to determine cognitive learning style
+        (Visual, Auditory, Textual, Example/Analogy) across any subject or field.
+        """
+        user_prompt = prompts.get_onboarding_quiz_user_prompt(topic)
+        fallback_questions = [
+            {
+                "id": 1,
+                "scenario": "When learning a complex new subject for the first time, what helps you grasp it fastest?",
+                "options": [
+                    {"key": "A", "text": "Diagrams, mind maps, infographics, or charts showing how parts connect", "modality": "visual"},
+                    {"key": "B", "text": "Listening to a knowledgeable person explain it or discussing it out loud", "modality": "auditory"},
+                    {"key": "C", "text": "Reading well-organized notes, bullet points, definitions, and articles", "modality": "text"},
+                    {"key": "D", "text": "Walking through concrete real-world cases, everyday examples, or demonstrations", "modality": "example"},
+                ],
+            },
+            {
+                "id": 2,
+                "scenario": "When you get stuck trying to understand a difficult, confusing concept, what is your first instinct?",
+                "options": [
+                    {"key": "A", "text": "Sketch out the relationships or look for a visual diagram/graphic", "modality": "visual"},
+                    {"key": "B", "text": "Talk through the idea out loud to yourself or ask someone to explain it verbally", "modality": "auditory"},
+                    {"key": "C", "text": "Re-read written explanations or look up structured reference summaries", "modality": "text"},
+                    {"key": "D", "text": "Think of a relatable everyday metaphor, comparison, or analogy", "modality": "analogy"},
+                ],
+            },
+            {
+                "id": 3,
+                "scenario": "Which format makes a study session or lesson feel most engaging and easy to absorb?",
+                "options": [
+                    {"key": "A", "text": "Visual presentations, clear layouts, diagrams, and graphic organizers", "modality": "visual"},
+                    {"key": "B", "text": "Audio discussions, podcasts, voice walk-throughs, or conversational explanations", "modality": "auditory"},
+                    {"key": "C", "text": "Carefully written articles with clear headings, bullet points, and definitions", "modality": "text"},
+                    {"key": "D", "text": "Practical demonstrations, step-by-step walkthroughs, or case studies", "modality": "example"},
+                ],
+            },
+            {
+                "id": 4,
+                "scenario": "How do you best retain and recall an abstract idea days after learning it?",
+                "options": [
+                    {"key": "A", "text": "Visualizing the diagram, color cues, or mental picture of the concept", "modality": "visual"},
+                    {"key": "B", "text": "Remembering the voice, conversation, tone, or verbal explanation", "modality": "auditory"},
+                    {"key": "C", "text": "Reviewing organized written notes, highlights, and summary flashcards", "modality": "text"},
+                    {"key": "D", "text": "Remembering a vivid real-life story, metaphor, or comparison", "modality": "analogy"},
+                ],
+            },
+            {
+                "id": 5,
+                "scenario": "If you had 15 minutes to review before an exam or presentation on any subject, you would prefer:",
+                "options": [
+                    {"key": "A", "text": "A one-page visual cheat sheet with diagrams, flowcharts, and tables", "modality": "visual"},
+                    {"key": "B", "text": "A quick 10-minute audio breakdown or voice conversation recap", "modality": "auditory"},
+                    {"key": "C", "text": "A concise bullet-point summary of key terms, facts, and definitions", "modality": "text"},
+                    {"key": "D", "text": "A sample scenario or case study worked through step-by-step", "modality": "example"},
+                ],
+            },
+        ]
+
+        try:
+            raw_response = self._call_llm(
+                system_prompt=prompts.ONBOARDING_QUIZ_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                temperature=0.4,
+                max_tokens=2000,
+            )
+            parsed = self.parse_json_response(raw_response)
+            if isinstance(parsed, list) and len(parsed) >= 3:
+                return parsed
+        except Exception as e:
+            print(f"[LLMService] generate_onboarding_quiz failed ({e}), using fallback questions")
+
+        return fallback_questions
+
     def analyze_misconception(
+
         self,
         context_chunks: List[str],
         question: str,

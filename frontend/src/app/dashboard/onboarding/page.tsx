@@ -1,581 +1,733 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import {
-  startOnboarding,
-  submitOnboarding,
-  DiagnosticTask,
-  DiagnosticSignal,
-  QuizQuestion,
-} from "@/lib/api";
+import { classifyOnboarding, LearnerProfile } from "@/lib/api";
+import { DIAGNOSTIC_MODULES, DiagnosticModule, DiagnosticOption } from "@/lib/diagnostic-modules";
+import DiagramRenderer from "@/components/DiagramRenderer";
 
-type Modality = "text" | "diagram" | "example" | "analogy" | "auditory" | "code";
-const MODALITIES: Modality[] = ["text", "diagram", "example", "analogy", "auditory", "code"];
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const MODALITY_LABELS: Record<Modality, string> = {
-  text: "Written Explanation",
-  diagram: "Visual Diagram",
-  example: "Real-World Example",
-  analogy: "Analogy",
-  auditory: "Spoken Script",
-  code: "Implementation Code",
-};
+interface ModuleAnswer {
+  question_id: number;
+  selected_key: string;
+  modality: string;
+  response_ms: number; // inflated to 12000 if wrong, to penalise backend scoring
+}
 
-const MODALITY_ICONS: Record<Modality, string> = {
-  text: "📝",
-  diagram: "📊",
-  example: "🔬",
-  analogy: "💡",
-  auditory: "🎙️",
-  code: "💻",
-};
+interface ClassificationResult {
+  profile: LearnerProfile;
+  dominant_modality: string;
+  weights: Record<string, number>;
+  weight_string: string;
+  delivery_plan: { primary: string; secondary: string };
+}
 
-type ConceptSignals = Record<Modality, { correct: boolean; ms: number }[]>;
+// Stages: 0=intro, 1-4=modules, 5=classifying, 6=results
+type Stage = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export default function OnboardingPage() {
-  const router = useRouter();
+// ─── TTS helper ───────────────────────────────────────────────────────────────
 
-  // Step 0=intro (topic entry), 1=loading tasks, 2=diagnostic, 3=submitting, 4=done
-  const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [topic, setTopic] = useState("Machine Learning");
-
-  const [tasks, setTasks] = useState<DiagnosticTask[]>([]);
-  const [sessionId, setSessionId] = useState("");
-
-  // Current task & modality
-  const [taskIdx, setTaskIdx] = useState(0);
-  const [modalityIdx, setModalityIdx] = useState(0);
-
-  // Answer signals: taskIdx → signals per modality
-  const signals = useRef<ConceptSignals[]>([]);
-  const taskStartRef = useRef<number>(Date.now());
-
-  // Selected answer for current micro-quiz
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [answered, setAnswered] = useState(false);
-
-  const currentTask = tasks[taskIdx];
-  const currentModality: Modality = MODALITIES[modalityIdx];
-  const currentRep = currentTask?.representations?.[currentModality];
-
-  const totalSteps = tasks.length * MODALITIES.length;
-  const doneSteps = taskIdx * MODALITIES.length + modalityIdx;
-  const progress = totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0;
-
-  // ── Load diagnostic tasks ─────────────────────────────────
-  const loadTasks = useCallback(async (chosenTopic: string) => {
-    setStep(1);
-    setLoading(true);
-    setError("");
-    try {
-      const res = await startOnboarding(chosenTopic);
-      setTasks(res.tasks);
-      setSessionId(res.diagnostic_session_id);
-      signals.current = res.tasks.map(() => ({
-        text: [], diagram: [], example: [], analogy: [], auditory: [], code: [],
-      }));
-      taskStartRef.current = Date.now();
-      setStep(2);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load diagnostic.");
-      setStep(0);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // ── Answer a micro-quiz question ──────────────────────────
-  const handleAnswer = (key: string) => {
-    if (answered) return;
-    const now = Date.now();
-    const ms = now - taskStartRef.current;
-    const quiz = currentRep?.quiz as QuizQuestion | undefined;
-    const correct = quiz?.correct_key === key;
-
-    setSelectedKey(key);
-    setAnswered(true);
-
-    if (signals.current[taskIdx]) {
-      signals.current[taskIdx][currentModality].push({ correct, ms });
-    }
-  };
-
-  // ── Advance to next modality / task ──────────────────────
-  const handleNext = () => {
-    setSelectedKey(null);
-    setAnswered(false);
-    taskStartRef.current = Date.now();
-
-    if (modalityIdx < MODALITIES.length - 1) {
-      setModalityIdx(modalityIdx + 1);
-    } else if (taskIdx < tasks.length - 1) {
-      setTaskIdx(taskIdx + 1);
-      setModalityIdx(0);
-    } else {
-      handleSubmit();
-    }
-  };
-
-  // ── Submit signals and build profile ─────────────────────
-  const handleSubmit = async () => {
-    setStep(3);
-    setLoading(true);
-
-    const aggregated: Record<Modality, { score: number; avg_ms: number }> = {
-      text: { score: 0, avg_ms: 0 },
-      diagram: { score: 0, avg_ms: 0 },
-      example: { score: 0, avg_ms: 0 },
-      analogy: { score: 0, avg_ms: 0 },
-      auditory: { score: 0, avg_ms: 0 },
-      code: { score: 0, avg_ms: 0 },
-    };
-
-    MODALITIES.forEach((mod) => {
-      const all: { correct: boolean; ms: number }[] = [];
-      signals.current.forEach((taskSignals) => {
-        if (taskSignals[mod]) {
-          all.push(...taskSignals[mod]);
-        }
-      });
-      if (all.length === 0) return;
-      const score = all.filter((s) => s.correct).length / all.length;
-      const avg_ms = Math.round(all.reduce((s, x) => s + x.ms, 0) / all.length);
-      aggregated[mod] = { score, avg_ms };
-    });
-
-    try {
-      await submitOnboarding({
-        diagnostic_session_id: sessionId,
-        signals: aggregated as Record<string, DiagnosticSignal>,
-      });
-      setStep(4);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Submission failed.");
-      setStep(2);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (step === 0) {
-    return (
-      <IntroScreen
-        topic={topic}
-        setTopic={setTopic}
-        onStart={() => loadTasks(topic)}
-        loading={loading}
-        error={error}
-      />
-    );
+function speakText(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    window.speechSynthesis.speak(utter);
+  } catch {
+    // Speech synthesis unavailable in this browser
   }
-  if (step === 1) return <LoadingScreen topic={topic} />;
-  if (step === 3) return <SubmittingScreen />;
-  if (step === 4) return <DoneScreen onContinue={() => router.push("/dashboard/learn")} />;
+}
 
-  if (step === 2 && !currentTask) return <LoadingScreen topic={topic} />;
+// ─── Stimulus Renderers ───────────────────────────────────────────────────────
 
-  const quiz = currentRep?.quiz as QuizQuestion | undefined;
+function AuditoryStimulus({ module }: { module: DiagnosticModule }) {
+  const [playing, setPlaying] = useState(false);
+
+  const handlePlay = () => {
+    if (module.auditoryText) {
+      setPlaying(true);
+      speakText(module.auditoryText);
+      // Browser synthesis has no reliable end callback on all browsers — reset after estimate
+      const wordCount = module.auditoryText.split(" ").length;
+      setTimeout(() => setPlaying(false), (wordCount / 2.5) * 1000);
+    }
+  };
 
   return (
-    <div style={{ maxWidth: 760, width: "100%" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-          <div>
-            <span className="badge badge-blue" style={{ marginRight: "0.5rem" }}>
-              Concept {taskIdx + 1} of {tasks.length}
-            </span>
-            <span className="badge" style={{ textTransform: "capitalize" }}>
-              {MODALITY_ICONS[currentModality]} {MODALITY_LABELS[currentModality]}
-            </span>
-          </div>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-            {Math.round(progress)}% complete
-          </span>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.85rem",
+        padding: "1.25rem",
+        background: "var(--bg-secondary)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      {/* Tutor avatar row */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #6366f1, #ec4899)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "1.1rem",
+            flexShrink: 0,
+          }}
+        >
+          🤖
         </div>
-        <div className="progress-bar-bg">
-          <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
-        </div>
+        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-primary)" }}>
+          CognifyAI Tutor
+        </span>
+        <span
+          style={{
+            fontSize: "0.68rem",
+            background: "rgba(99, 102, 241, 0.12)",
+            color: "var(--accent-1)",
+            borderRadius: "999px",
+            padding: "0.15rem 0.5rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Explanation
+        </span>
       </div>
 
-      {/* Concept label */}
-      <h2 style={{ marginBottom: "0.25rem", textTransform: "capitalize", fontSize: "1.4rem" }}>
-        {currentTask.concept}
-      </h2>
-      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "1.25rem" }}>
-        Concept {taskIdx + 1} derived from <strong style={{ color: "var(--text-secondary)" }}>{topic}</strong>. We're showing this in a <strong style={{ color: "var(--text-secondary)" }}>{MODALITY_LABELS[currentModality].toLowerCase()}</strong> format.
-      </p>
+      {/* Chat bubble */}
+      <div
+        style={{
+          background: "var(--bg-card)",
+          borderRadius: "0 var(--radius-md) var(--radius-md) var(--radius-md)",
+          padding: "1rem 1.15rem",
+          border: "1px solid var(--border)",
+          fontSize: "0.9rem",
+          lineHeight: 1.65,
+          color: "var(--text-primary)",
+          position: "relative",
+        }}
+      >
+        {module.auditoryText}
+      </div>
 
-      {/* Content card */}
-      <div className="card fade-up" style={{ marginBottom: "1.25rem", padding: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-          <span style={{ fontSize: "1.2rem" }}>{MODALITY_ICONS[currentModality]}</span>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {MODALITY_LABELS[currentModality]}
-          </span>
-        </div>
-
-        {currentModality === "diagram" && currentRep?.mermaid ? (
-          <MermaidBlock code={currentRep.mermaid} />
-        ) : currentModality === "auditory" ? (
-          <AudioScriptPlayer text={currentRep?.content || `So when we talk about ${currentTask?.concept}, imagine explaining it aloud to a listener naturally.`} />
-        ) : currentModality === "code" ? (
-          <pre style={{
-            background: "#0d1117",
-            padding: "1rem",
-            borderRadius: "8px",
-            color: "#e6edf3",
-            fontFamily: "monospace",
-            fontSize: "0.85rem",
-            overflowX: "auto",
-            lineHeight: 1.6,
-          }}>
-            <code>{currentRep?.content || `# Implementation of ${currentTask?.concept}\ndef process():\n    pass`}</code>
-          </pre>
+      {/* TTS button */}
+      <button
+        onClick={handlePlay}
+        className="btn btn-outline"
+        style={{
+          alignSelf: "flex-start",
+          fontSize: "0.8rem",
+          padding: "0.4rem 0.9rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.4rem",
+        }}
+      >
+        {playing ? (
+          <>
+            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "var(--text-muted)" }} />
+            Playing...
+          </>
         ) : (
-          <p style={{ fontSize: "0.9rem", lineHeight: 1.8, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
-            {currentRep?.content || currentRep?.mermaid || `${currentTask?.concept || "This concept"} is a core principle in this domain.`}
-          </p>
+          <> ▶ Listen Aloud </>
         )}
-
-
-      </div>
-
-      {/* Micro-quiz */}
-      {quiz?.question && (
-        <div className="card fade-up" style={{ padding: "1.25rem" }}>
-          <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
-            Quick check
-          </p>
-          <p style={{ fontSize: "0.9rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "1rem" }}>
-            {quiz.question}
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-            {quiz.options?.map((opt) => {
-              const isSelected = selectedKey === opt.key;
-              const isCorrect = opt.key === quiz.correct_key;
-              let cls = "mcq-option";
-              if (answered) {
-                if (isSelected && isCorrect) cls += " correct";
-                else if (isSelected && !isCorrect) cls += " wrong";
-                else if (isCorrect) cls += " correct";
-                else cls += " disabled";
-              }
-              return (
-                <button
-                  key={opt.key}
-                  className={cls}
-                  onClick={() => handleAnswer(opt.key)}
-                  id={`diag-opt-${opt.key}`}
-                >
-                  <span style={{ fontWeight: 600, marginRight: "0.5rem", opacity: 0.5 }}>{opt.key}.</span>
-                  {opt.text}
-                </button>
-              );
-            })}
-          </div>
-
-          {answered && (
-            <div style={{ marginTop: "1rem" }}>
-              <div className={`feedback-box ${selectedKey === quiz.correct_key ? "success" : "error"}`}
-                style={{ marginBottom: "0.75rem" }}>
-                {selectedKey === quiz.correct_key
-                  ? "✓ Correct!"
-                  : `✗ The correct answer was ${quiz.correct_key}.`}
-                {quiz.explanation && (
-                  <p style={{ marginTop: "0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>{quiz.explanation}</p>
-                )}
-              </div>
-              <button
-                id="diag-next-btn"
-                className="btn btn-primary"
-                style={{ width: "100%" }}
-                onClick={handleNext}
-              >
-                {taskIdx === tasks.length - 1 && modalityIdx === MODALITIES.length - 1
-                  ? "See my learner profile →"
-                  : "Next →"}
-              </button>
-            </div>
-          )}
-
-          {!answered && !quiz.options?.length && (
-            <button className="btn btn-outline" style={{ marginTop: "0.75rem" }} onClick={handleNext}>
-              Skip →
-            </button>
-          )}
-        </div>
-      )}
-
-      {(!quiz?.question) && (
-        <button id="diag-next-btn" className="btn btn-primary" style={{ width: "100%", marginTop: "0.5rem" }} onClick={handleNext}>
-          Next →
-        </button>
-      )}
+      </button>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────
-
-function IntroScreen({
-  topic,
-  setTopic,
-  onStart,
-  loading,
-  error,
-}: {
-  topic: string;
-  setTopic: (t: string) => void;
-  onStart: () => void;
-  loading: boolean;
-  error: string;
-}) {
-  const SUGGESTIONS = ["Machine Learning", "Quantum Computing", "Data Structures", "Macroeconomics"];
-
+function VisualStimulus({ module }: { module: DiagnosticModule }) {
+  if (!module.visualDiagram) return null;
   return (
-    <div style={{ maxWidth: 620, width: "100%" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <span className="badge badge-blue" style={{ marginBottom: "1rem", display: "inline-block" }}>
-          Adaptive Multimodal Assessment
+    <div
+      style={{
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border)",
+        background: "var(--bg-secondary)",
+        overflow: "hidden",
+        padding: "1rem",
+      }}
+    >
+      <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700, marginBottom: "0.75rem" }}>
+        Diagram — {module.visualDiagram.title}
+      </p>
+      <DiagramRenderer data={module.visualDiagram} />
+    </div>
+  );
+}
+
+function TextStimulus({ module }: { module: DiagnosticModule }) {
+  const st = module.structuredText;
+  if (!st) return null;
+  return (
+    <div
+      style={{
+        padding: "1.25rem 1.5rem",
+        background: "var(--bg-secondary)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.85rem",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <span style={{ fontSize: "0.7rem", background: "rgba(6, 182, 212, 0.15)", color: "#06b6d4", padding: "0.15rem 0.5rem", borderRadius: "999px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          Reference Note
         </span>
-        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem", lineHeight: 1.2 }}>
-          What subject do you <br />want to learn?
-        </h1>
-        <p style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
-          Enter a topic below. CognifyAI will dynamically generate 3 sub-concepts and test you across 6 learning modalities (text, diagram, example, analogy, audio narration, and code).
+      </div>
+
+      <h3 style={{ fontSize: "1rem", fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
+        {st.heading}
+      </h3>
+      {st.intro && (
+        <p style={{ fontSize: "0.86rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+          {st.intro}
         </p>
-      </div>
-
-      {/* Topic Input Box */}
-      <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", display: "block", marginBottom: "0.5rem" }}>
-          Target Learning Subject / Topic:
-        </label>
-        <input
-          type="text"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="e.g. Machine Learning, Organic Chemistry..."
-          style={{
-            width: "100%",
-            padding: "0.75rem 1rem",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color, #30363d)",
-            background: "var(--bg-input, #0d1117)",
-            color: "var(--text-primary, #fff)",
-            fontSize: "1rem",
-            marginBottom: "1rem",
-          }}
-        />
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Quick picks:</span>
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="badge"
-              onClick={() => setTopic(s)}
-              style={{ cursor: "pointer", border: topic === s ? "1px solid #38bdf8" : "1px solid transparent" }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1.5rem" }}>
-        {[
-          { icon: "📝", label: "Written Explanations" },
-          { icon: "📊", label: "Visual Mermaid Diagrams" },
-          { icon: "🔬", label: "Real-World Examples" },
-          { icon: "💡", label: "Analogy & Metaphors" },
-          { icon: "🎙️", label: "Spoken Conversational Scripts" },
-          { icon: "💻", label: "Code & Pseudocode" },
-        ].map((item) => (
-          <div key={item.label} className="card" style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 0.9rem" }}>
-            <span style={{ fontSize: "1.1rem" }}>{item.icon}</span>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{item.label}</span>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+        {st.items.map((item) => (
+          <div key={item.label} style={{ display: "flex", gap: "0.6rem", fontSize: "0.86rem", lineHeight: 1.55 }}>
+            <span style={{ color: "var(--accent-1)", fontWeight: 700, flexShrink: 0 }}>
+              {item.label}:
+            </span>
+            <span style={{ color: "var(--text-secondary)" }}>{item.description}</span>
           </div>
         ))}
       </div>
+      {st.closing && (
+        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: "0.6rem", margin: 0 }}>
+          {st.closing}
+        </p>
+      )}
+    </div>
+  );
+}
 
-      {error && <div className="feedback-box error" style={{ marginBottom: "1rem" }}>{error}</div>}
+function ScenarioStimulus({ module }: { module: DiagnosticModule }) {
+  if (!module.scenarioText) return null;
+  return (
+    <div
+      style={{
+        padding: "1.25rem 1.5rem",
+        background: "rgba(245, 158, 11, 0.06)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid rgba(245, 158, 11, 0.25)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.75rem",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <span style={{ fontSize: "0.7rem", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", padding: "0.15rem 0.5rem", borderRadius: "999px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          Real-World Scenario
+        </span>
+      </div>
+      <p style={{ fontSize: "0.9rem", lineHeight: 1.7, color: "var(--text-primary)", margin: 0 }}>
+        {module.scenarioText}
+      </p>
+    </div>
+  );
+}
 
-      <button
-        id="start-onboarding-btn"
-        className="btn btn-primary"
-        style={{ width: "100%", padding: "0.85rem" }}
-        onClick={onStart}
-        disabled={loading || !topic.trim()}
+// ─── Option Buttons ────────────────────────────────────────────────────────────
+
+function OptionButton({
+  opt,
+  selectedKey,
+  onSelect,
+}: {
+  opt: DiagnosticOption;
+  selectedKey: string | null;
+  onSelect: (key: string, isCorrect: boolean) => void;
+}) {
+  const isSelected = selectedKey === opt.key;
+  const isRevealed = selectedKey !== null;
+  const showCorrect = isRevealed && opt.isCorrect;
+  const showWrong = isRevealed && isSelected && !opt.isCorrect;
+
+  return (
+    <button
+      type="button"
+      onClick={() => !isRevealed && onSelect(opt.key, opt.isCorrect)}
+      disabled={isRevealed}
+      style={{
+        padding: "0.85rem 1.15rem",
+        textAlign: "left",
+        borderRadius: "var(--radius-md)",
+        border: showCorrect
+          ? "2px solid var(--accent-success)"
+          : showWrong
+          ? "2px solid var(--accent-danger, #ef4444)"
+          : isSelected
+          ? "2px solid var(--accent-1)"
+          : "1px solid var(--border)",
+        background: showCorrect
+          ? "rgba(16, 185, 129, 0.10)"
+          : showWrong
+          ? "rgba(239, 68, 68, 0.10)"
+          : isSelected
+          ? "rgba(99, 102, 241, 0.10)"
+          : "var(--bg-secondary)",
+        cursor: isRevealed ? "default" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.85rem",
+        transition: "all 0.15s ease",
+      }}
+    >
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          background: showCorrect
+            ? "var(--accent-success)"
+            : showWrong
+            ? "#ef4444"
+            : isSelected
+            ? "var(--accent-1)"
+            : "var(--bg-card)",
+          color: showCorrect || showWrong || isSelected ? "#fff" : "var(--text-secondary)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 700,
+          fontSize: "0.85rem",
+          flexShrink: 0,
+        }}
       >
-        {loading ? <span className="spinner" /> : `Begin Diagnostic for "${topic}" →`}
-      </button>
-    </div>
+        {showCorrect ? "✓" : showWrong ? "✗" : opt.key}
+      </span>
+      <span style={{ fontSize: "0.88rem", color: "var(--text-primary)", flex: 1, lineHeight: 1.4 }}>
+        {opt.text}
+      </span>
+    </button>
   );
 }
 
-function LoadingScreen({ topic }: { topic: string }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "1rem" }}>
-      <div className="spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
-      <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
-        Deriving sub-concepts and generating 6-modality diagnostic tasks for "{topic}"…
-      </p>
-    </div>
-  );
-}
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
-function SubmittingScreen() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "1rem" }}>
-      <div className="spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
-      <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Computing your multi-dimensional learner profile…</p>
-    </div>
-  );
-}
+export default function OnboardingPage() {
+  const router = useRouter();
+  const [stage, setStage] = useState<Stage>(0);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<ModuleAnswer[]>([]);
+  const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
+  const [error, setError] = useState("");
+  const questionShownAt = useRef<number>(Date.now());
 
-function DoneScreen({ onContinue }: { onContinue: () => void }) {
-  return (
-    <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
-      <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🎉</div>
-      <h2 style={{ marginBottom: "0.75rem" }}>Your multimodal profile is calibrated!</h2>
-      <p style={{ color: "var(--text-secondary)", lineHeight: 1.8, marginBottom: "2rem" }}>
-        We've calculated baseline weights across text, visual, example, analogy, auditory, and code representations. All future lessons will dynamically adapt based on these weights.
-      </p>
-      <button id="go-to-learn-btn" className="btn btn-primary" style={{ width: "100%", padding: "0.85rem" }} onClick={onContinue}>
-        Start Adaptive Learning →
-      </button>
-    </div>
-  );
-}
+  // Current module (stage 1-4 maps to DIAGNOSTIC_MODULES[stage-1])
+  const currentModule: DiagnosticModule | null =
+    stage >= 1 && stage <= 4 ? DIAGNOSTIC_MODULES[stage - 1] : null;
 
-function MermaidBlock({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ref.current || !code) return;
-    let cleanCode = code.trim().replace(/^```(?:mermaid)?/i, "").replace(/```$/, "").trim();
-    if (!/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|mindmap)/i.test(cleanCode)) {
-      cleanCode = `graph TD;\n  A["${cleanCode.replace(/"/g, "'").slice(0, 60)}"]`;
-    }
-
-    import("mermaid").then(async (m) => {
-      m.default.initialize({
-        startOnLoad: false,
-        theme: "dark",
-        suppressErrorRendering: true,
-        securityLevel: "loose",
-      });
-
-      // Remove leftover error divs created by mermaid in document body
-      if (typeof document !== "undefined") {
-        document.querySelectorAll(".mermaid-error, [id^='dmermaid'], [id^='d-']").forEach((el) => el.remove());
-      }
-
-      try {
-        const isValid = await m.default.parse(cleanCode).catch(() => false);
-        if (!isValid) throw new Error("Invalid mermaid syntax");
-
-        const { svg } = await m.default.render("diag-" + Math.random().toString(36).slice(2), cleanCode);
-        if (ref.current) ref.current.innerHTML = svg;
-      } catch {
-        if (typeof document !== "undefined") {
-          document.querySelectorAll(".mermaid-error, [id^='dmermaid'], [id^='d-']").forEach((el) => el.remove());
-        }
-        if (ref.current) {
-          ref.current.innerHTML = `<div style="padding:1rem;background:var(--bg-base);border-radius:6px;font-size:0.8rem;color:var(--text-secondary)"><pre style="font-family:monospace;white-space:pre-wrap">${cleanCode}</pre></div>`;
-        }
-      }
-    }).catch(() => {});
-  }, [code]);
-  return <div ref={ref} style={{ overflowX: "auto" }} />;
-}
-
-
-function AudioScriptPlayer({ text }: { text: string }) {
-  const [playing, setPlaying] = useState(false);
-  const [paused, setPaused] = useState(false);
-
-  const handlePlay = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      alert("Text-to-speech is not supported in your browser.");
-      return;
-    }
-    if (paused) {
-      window.speechSynthesis.resume();
-      setPaused(false);
-      setPlaying(true);
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.onend = () => { setPlaying(false); setPaused(false); };
-    utterance.onerror = () => { setPlaying(false); setPaused(false); };
-    window.speechSynthesis.speak(utterance);
-    setPlaying(true);
+  // Called when entering a module stage
+  const enterModule = (s: Stage) => {
+    setSelectedKey(null);
+    questionShownAt.current = Date.now();
+    setStage(s);
   };
 
-  const handlePause = () => {
-    if (typeof window !== "undefined" && window.speechSynthesis.speaking) {
-      window.speechSynthesis.pause();
-      setPaused(true);
-      setPlaying(false);
-    }
-  };
+  const handleSelectOption = (key: string, isCorrect: boolean) => {
+    if (!currentModule) return;
+    setSelectedKey(key);
 
-  const handleStop = () => {
-    if (typeof window !== "undefined") {
-      window.speechSynthesis.cancel();
-      setPlaying(false);
-      setPaused(false);
-    }
-  };
+    const response_ms = Date.now() - questionShownAt.current;
+    // Penalise wrong answers by inflating response_ms (min speed_factor in backend)
+    const effective_ms = isCorrect ? response_ms : 15000;
 
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+    const answer: ModuleAnswer = {
+      question_id: currentModule.id,
+      selected_key: key,
+      modality: currentModule.modality,
+      response_ms: effective_ms,
     };
-  }, []);
+
+    const updatedAnswers = [...answers, answer];
+
+    setTimeout(() => {
+      setAnswers(updatedAnswers);
+      setSelectedKey(null);
+
+      if (stage < 4) {
+        enterModule((stage + 1) as Stage);
+      } else {
+        // All 4 modules done — classify
+        finishClassification(updatedAnswers);
+      }
+    }, 900);
+  };
+
+  const finishClassification = async (allAnswers: ModuleAnswer[]) => {
+    setStage(5);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    try {
+      const result = await classifyOnboarding({
+        answers: allAnswers,
+        voice_pref_selected: false,
+        preferred_topic: "Multimodal Diagnostic Assessment",
+      });
+      setClassificationResult({
+        profile: result.profile,
+        dominant_modality: result.dominant_modality,
+        weights: result.weights,
+        weight_string: result.weight_string,
+        delivery_plan: result.delivery_plan,
+      });
+      setStage(6);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to classify learner profile.");
+      setStage(0);
+    }
+  };
+
+  const resetAssessment = () => {
+    setStage(0);
+    setSelectedKey(null);
+    setAnswers([]);
+    setClassificationResult(null);
+    setError("");
+  };
+
+  // ── Progress indicator for module stages ──────────────────────────────────
+  const moduleProgress = stage >= 1 && stage <= 4 ? stage : 0;
 
   return (
-    <div style={{ padding: "1.25rem", background: "rgba(236, 72, 153, 0.05)", border: "1px solid rgba(236, 72, 153, 0.25)", borderRadius: "var(--radius-md)", marginBottom: "1rem" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontSize: "1.3rem" }}>🎙️</span>
-          <div>
-            <h4 style={{ fontSize: "0.88rem", color: "var(--text-primary)", margin: 0 }}>Auditory Spoken Script</h4>
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: 0 }}>Listen to the voice narration below</p>
+    <div style={{ maxWidth: 860, width: "100%", margin: "0 auto", paddingBottom: "3rem" }}>
+      {/* Header */}
+      <div style={{ marginBottom: "1.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+          <span className="badge badge-purple">CognifyAI Diagnostic</span>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            Multimodal Learner Calibration
+          </span>
+        </div>
+        <h1 style={{ fontSize: "2rem", fontWeight: 800, letterSpacing: "-0.03em" }}>
+          Identify Your Learner Type
+        </h1>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "0.25rem" }}>
+          Four distinct modules — Auditory, Visual, Textual, and Applied — each tests how well you engage with one learning style.
+        </p>
+      </div>
+
+      {error && (
+        <div className="feedback-box error" style={{ marginBottom: "1.5rem" }}>
+          {error}
+        </div>
+      )}
+
+      {/* ── STAGE 0: Intro ─────────────────────────────────────────────── */}
+      {stage === 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div
+            style={{
+              padding: "1.75rem",
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
+          >
+            <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.7, margin: 0 }}>
+              Instead of asking what you <em>prefer</em>, this diagnostic actually <strong>tests how you perform</strong> in each learning style. Each module gives you a real stimulus and measures your comprehension and response speed.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" }}>
+              {DIAGNOSTIC_MODULES.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    padding: "1rem",
+                    background: "var(--bg-secondary)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--border)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.35rem",
+                  }}
+                >
+                  <span style={{ fontSize: "1.4rem" }}>{m.icon}</span>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                    {m.title}
+                  </span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                    {m.subtitle}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => enterModule(1)}
+                style={{ padding: "0.7rem 1.75rem", fontSize: "0.9rem", fontWeight: 700 }}
+              >
+                Begin Diagnostic →
+              </button>
+            </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "0.4rem" }}>
-          {!playing ? (
-            <button className="btn btn-primary" onClick={handlePlay} style={{ fontSize: "0.8rem", background: "#ec4899", borderColor: "#ec4899", padding: "0.45rem 0.85rem" }}>
-              ▶ Play Voice
-            </button>
-          ) : (
-            <>
-              <button className="btn btn-outline" onClick={handlePause} style={{ fontSize: "0.8rem", padding: "0.45rem 0.85rem" }}>
-                ⏸ Pause
-              </button>
-              <button className="btn btn-outline" onClick={handleStop} style={{ fontSize: "0.8rem", padding: "0.45rem 0.85rem" }}>
-                ⏹ Stop
-              </button>
-            </>
-          )}
+      )}
+
+      {/* ── STAGE 1–4: Modules ─────────────────────────────────────────── */}
+      {stage >= 1 && stage <= 4 && currentModule && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          {/* Module progress bar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              {DIAGNOSTIC_MODULES.map((m, i) => (
+                <div
+                  key={m.id}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: "var(--radius-sm)",
+                    background:
+                      i + 1 < stage
+                        ? "var(--accent-success)"
+                        : i + 1 === stage
+                        ? "var(--accent-1)"
+                        : "var(--bg-secondary)",
+                    border: i + 1 === stage ? "2px solid var(--accent-1)" : "1px solid var(--border)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: i + 1 < stage ? "0.75rem" : "0.9rem",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  {i + 1 < stage ? "✓" : m.icon}
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize: "0.8rem", color: "var(--accent-1)", fontFamily: "ui-monospace", fontWeight: 700 }}>
+              {moduleProgress} / 4
+            </span>
+          </div>
+
+          {/* Module header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.65rem",
+              padding: "0.75rem 1rem",
+              background: "rgba(99, 102, 241, 0.06)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid rgba(99, 102, 241, 0.2)",
+            }}
+          >
+            <span style={{ fontSize: "1.4rem" }}>{currentModule.icon}</span>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: "0.9rem", color: "var(--text-primary)" }}>
+                {currentModule.title}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                {currentModule.subtitle}
+              </p>
+            </div>
+          </div>
+
+          {/* Stimulus */}
+          {currentModule.stimulusType === "auditory" && <AuditoryStimulus module={currentModule} />}
+          {currentModule.stimulusType === "visual" && <VisualStimulus module={currentModule} />}
+          {currentModule.stimulusType === "text" && <TextStimulus module={currentModule} />}
+          {currentModule.stimulusType === "scenario" && <ScenarioStimulus module={currentModule} />}
+
+          {/* Question card */}
+          <div
+            style={{
+              padding: "1.5rem",
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            {currentModule.questionLabel && (
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700, margin: 0 }}>
+                {currentModule.questionLabel}
+              </p>
+            )}
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.45, margin: 0 }}>
+              {currentModule.question}
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+              {currentModule.options.map((opt) => (
+                <OptionButton
+                  key={opt.key}
+                  opt={opt}
+                  selectedKey={selectedKey}
+                  onSelect={handleSelectOption}
+                />
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
-      <p style={{ fontSize: "0.92rem", lineHeight: 1.8, color: "var(--text-secondary)", whiteSpace: "pre-wrap", fontStyle: "italic" }}>
-        "{text}"
-      </p>
+      )}
+
+      {/* ── STAGE 5: Classifying ───────────────────────────────────────── */}
+      {stage === 5 && (
+        <div
+          style={{
+            padding: "4rem 2rem",
+            background: "var(--bg-card)",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--border)",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "1rem",
+          }}
+        >
+          <div className="spinner" style={{ width: 36, height: 36 }} />
+          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)" }}>
+            Calibrating Your Cognitive Profile…
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", maxWidth: 440 }}>
+            Weighing comprehension scores and response speeds across all four modalities.
+          </p>
+        </div>
+      )}
+
+      {/* ── STAGE 6: Results ───────────────────────────────────────────── */}
+      {stage === 6 && classificationResult && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div
+            style={{
+              padding: "2rem",
+              background: "radial-gradient(ellipse at top, rgba(99, 102, 241, 0.15) 0%, var(--bg-card) 70%)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid rgba(99, 102, 241, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
+          >
+            {/* Dominant result */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+              <div>
+                <span className="badge badge-purple" style={{ marginBottom: "0.5rem", display: "inline-block" }}>
+                  Cognitive Type Identified
+                </span>
+                <h2 style={{ fontSize: "1.8rem", fontWeight: 800, margin: "0.2rem 0", color: "var(--text-primary)" }}>
+                  {classificationResult.dominant_modality.toUpperCase()} DOMINANT
+                </h2>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>
+                  Ratio Formula:{" "}
+                  <code style={{ color: "var(--accent-1)", fontWeight: 700 }}>
+                    {classificationResult.weight_string}
+                  </code>
+                </p>
+              </div>
+              <span style={{ fontSize: "2.4rem" }}>
+                {classificationResult.dominant_modality === "auditory"
+                  ? "🎧"
+                  : classificationResult.dominant_modality === "visual"
+                  ? "👁️"
+                  : classificationResult.dominant_modality === "text"
+                  ? "📄"
+                  : "🔬"}
+              </span>
+            </div>
+
+            {/* Delivery plan */}
+            <div
+              style={{
+                padding: "1.25rem",
+                background: "var(--bg-secondary)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <h3 style={{ fontSize: "0.92rem", fontWeight: 700, marginBottom: "0.75rem", color: "var(--text-primary)" }}>
+                🎯 How CognifyAI Will Deliver Your Content:
+              </h3>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <li style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                  <span>🎯</span>
+                  <span><strong>Primary:</strong> {classificationResult.delivery_plan.primary}</span>
+                </li>
+                <li style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                  <span>📊</span>
+                  <span><strong>Supporting:</strong> {classificationResult.delivery_plan.secondary}</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Weights grid */}
+            <div>
+              <h4 style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "0.6rem", textTransform: "uppercase" }}>
+                Performance-Based Cognitive Blend
+              </h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
+                {[
+                  { key: "auditory", label: "Auditory", pct: classificationResult.weights.auditory || 0, color: "#ec4899", icon: "🎧" },
+                  { key: "visual",   label: "Visual",   pct: classificationResult.weights.visual   || 0, color: "#8b5cf6", icon: "👁️" },
+                  { key: "text",     label: "Textual",  pct: classificationResult.weights.text     || 0, color: "#06b6d4", icon: "📄" },
+                  { key: "example",  label: "Applied",  pct: classificationResult.weights.example  || 0, color: "#10b981", icon: "🔬" },
+                ].map((item) => (
+                  <div
+                    key={item.key}
+                    style={{
+                      padding: "0.85rem",
+                      background: "var(--bg-card)",
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border)",
+                      textAlign: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: "1.2rem", display: "block", marginBottom: "0.2rem" }}>{item.icon}</span>
+                    <span style={{ fontSize: "1.1rem", fontWeight: 800, color: item.color, display: "block" }}>
+                      {item.pct}%
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
+              <button
+                type="button"
+                onClick={resetAssessment}
+                className="btn btn-outline"
+                style={{ fontSize: "0.85rem" }}
+              >
+                Recalibrate
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard/learn?welcome=true")}
+                className="btn btn-primary"
+                style={{ fontSize: "0.85rem", fontWeight: 700, padding: "0.6rem 1.25rem" }}
+              >
+                Start Adaptive Lesson →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-

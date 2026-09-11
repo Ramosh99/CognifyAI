@@ -1,9 +1,10 @@
 "use client";
 import { useState, useRef, DragEvent } from "react";
+import Link from "next/link";
 import { ingestText, ingestFile } from "@/lib/api";
 
-type Mode = "text" | "file";
-type Status = { type: "success" | "error"; msg: string } | null;
+type Mode = "file" | "text";
+type Status = { type: "success" | "error"; msg: string; topic?: string } | null;
 
 export default function UploadPage() {
   const [mode, setMode]         = useState<Mode>("file");
@@ -26,6 +27,8 @@ export default function UploadPage() {
   const submit = async () => {
     setLoading(true);
     setStatus(null);
+    const resolvedTopic = topic.trim() || (file ? file.name.replace(/\.[^/.]+$/, "") : "Ingested Material");
+
     try {
       let res;
       if (mode === "text") {
@@ -35,8 +38,15 @@ export default function UploadPage() {
         if (!file) throw new Error("Please select a file.");
         res = await ingestFile(file, topic || undefined);
       }
-      setStatus({ type: "success", msg: `${res.message} (${res.chunks_stored} chunks stored)` });
-      setText(""); setFile(null); setTopic(""); setSource("");
+      setStatus({
+        type: "success",
+        msg: `${res.message} (${res.chunks_stored} chunks stored)`,
+        topic: resolvedTopic,
+      });
+      setText("");
+      setFile(null);
+      setTopic("");
+      setSource("");
     } catch (e: unknown) {
       setStatus({ type: "error", msg: `${e instanceof Error ? e.message : "Something went wrong"}` });
     } finally {
@@ -98,11 +108,12 @@ export default function UploadPage() {
               Content
             </label>
             <textarea
-              className="textarea"
+              className="input"
               rows={8}
-              placeholder="Paste lecture notes, textbook content, or any study material here..."
+              placeholder="Paste lecture notes, book excerpts, definitions..."
               value={text}
               onChange={(e) => setText(e.target.value)}
+              style={{ resize: "vertical", fontFamily: "inherit" }}
             />
           </div>
         )}
@@ -113,7 +124,7 @@ export default function UploadPage() {
             <label style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Topic
             </label>
-            <input className="input" placeholder="e.g. networking" value={topic} onChange={(e) => setTopic(e.target.value)} />
+            <input className="input" placeholder="e.g. networking, operating systems" value={topic} onChange={(e) => setTopic(e.target.value)} />
           </div>
           {mode === "text" && (
             <div>
@@ -126,13 +137,36 @@ export default function UploadPage() {
         </div>
 
         {status && (
-          <div className={`feedback-box ${status.type === "success" ? "success" : "error"}`}>
-            {status.msg}
+          <div className={`feedback-box ${status.type === "success" ? "success" : "error"} fade-up`}>
+            <p style={{ margin: 0, fontWeight: 600 }}>{status.msg}</p>
+            {status.type === "success" && status.topic && (
+              <div style={{ marginTop: "0.85rem", paddingTop: "0.75rem", borderTop: "1px solid rgba(16, 185, 129, 0.25)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                  Ready to study <strong>{status.topic}</strong>?
+                </span>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <Link
+                    href={`/dashboard/learn?topic=${encodeURIComponent(status.topic)}`}
+                    className="btn btn-primary"
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 0.8rem", textDecoration: "none" }}
+                  >
+                    Start Adaptive Lesson →
+                  </Link>
+                  <Link
+                    href={`/dashboard/quiz?topic=${encodeURIComponent(status.topic)}`}
+                    className="btn btn-outline"
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 0.8rem", textDecoration: "none" }}
+                  >
+                    Take Quiz →
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         <button className="btn btn-primary" onClick={submit} disabled={loading} style={{ alignSelf: "flex-start" }}>
-          {loading ? <><span className="spinner" /> Ingesting...</> : "Ingest"}
+          {loading ? <><span className="spinner" /> Ingesting...</> : "Ingest Material"}
         </button>
       </div>
     </div>

@@ -524,13 +524,13 @@ export default function VisualPage() {
         <div className="terminal-body" style={{ minHeight: "80px", justifyContent: "center" }}>
           {activeTab === "concept" && (
             <div className="terminal-prompt">
-              <span style={{ color: "var(--text-muted)" }}>concept</span>
+              <span style={{ color: "var(--accent-1)", fontSize: "0.95rem", flexShrink: 0 }}>✦</span>
               <input className="terminal-input"
                 placeholder='e.g. "How does photosynthesis work?" or "Explain TCP/IP"'
                 value={concept} onChange={e => setConcept(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && generate()} autoFocus />
               <button className="btn btn-primary" onClick={generate} disabled={loading || streaming}
-                style={{ fontWeight: 700, borderRadius: "4px", padding: "0.4rem 1rem", flexShrink: 0 }}>
+                style={{ fontWeight: 700, borderRadius: "var(--radius-sm)", padding: "0.45rem 1.15rem", flexShrink: 0 }}>
                 {loading
                   ? <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}><span className="spinner" />{elapsed}s</span>
                   : streaming ? "Streaming…" : "Visualize →"}
@@ -539,20 +539,20 @@ export default function VisualPage() {
           )}
           {activeTab === "topic" && (
             <div className="terminal-prompt">
-              <span style={{ color: "var(--text-muted)" }}>topic</span>
-              <input className="terminal-input" placeholder="Optional topic filter…"
+              <span style={{ color: "var(--accent-1)", fontSize: "0.9rem", flexShrink: 0 }}>📁</span>
+              <input className="terminal-input" placeholder="Optional topic filter… e.g. 'Operating Systems'"
                 value={topic} onChange={e => setTopic(e.target.value)} />
             </div>
           )}
           {activeTab === "style" && (
-            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
               {(["Visual", "Textual", "Auditory"] as LearnerType[]).map(l => (
                 <button key={l} onClick={() => setLearnerType(l)} style={{
-                  padding: "0.4rem 1.2rem", borderRadius: "4px", cursor: "pointer", transition: "all 0.2s ease",
-                  border: `1px solid ${learnerType === l ? "var(--text-primary)" : "var(--border)"}`,
-                  background: learnerType === l ? "rgba(128,128,128,0.08)" : "transparent",
-                  color: learnerType === l ? "var(--text-primary)" : "var(--text-muted)",
-                  fontSize: "0.8rem", fontWeight: 500,
+                  padding: "0.4rem 1.1rem", borderRadius: "var(--radius-sm)", cursor: "pointer", transition: "all 0.15s ease",
+                  border: `1px solid ${learnerType === l ? "var(--accent-1)" : "var(--border)"}`,
+                  background: learnerType === l ? "var(--badge-blue-bg)" : "transparent",
+                  color: learnerType === l ? "var(--accent-1)" : "var(--text-secondary)",
+                  fontSize: "0.8rem", fontWeight: learnerType === l ? 600 : 500,
                 }}>{l}</button>
               ))}
             </div>

@@ -128,3 +128,28 @@ def search_documents(
 
     results = [SearchResult(text=r["text"], score=r["score"]) for r in raw_results]
     return SearchResponse(query=body.query, results=results)
+
+
+@router.get("/stats")
+def get_document_stats(user_id: str = Depends(get_current_user_id)):
+    """Returns document count and chunk count for the authenticated user."""
+    try:
+        from app.core.supabase import get_supabase_client
+        client = get_supabase_client()
+        res = (
+            client.table("documents")
+            .select("source, doc_title", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        total_chunks = res.count or 0
+        sources = set()
+        for row in res.data or []:
+            s = row.get("source") or row.get("doc_title")
+            if s:
+                sources.add(s)
+        doc_count = len(sources) if sources else (1 if total_chunks > 0 else 0)
+        return {"document_count": doc_count, "chunk_count": total_chunks}
+    except Exception as e:
+        return {"document_count": 0, "chunk_count": 0, "error": str(e)}
+

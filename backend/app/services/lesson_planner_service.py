@@ -50,7 +50,6 @@ class LessonPlannerService:
             "text": profile.text_pref,
             "example": profile.example_pref,
             "auditory": profile.auditory_pref,
-            "code": profile.code_pref,
         }
         # Only include analogy if preference is strong enough
         include_analogy = profile.analogy_pref >= _ANALOGY_THRESHOLD
